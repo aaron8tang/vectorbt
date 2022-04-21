@@ -1,10 +1,10 @@
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
-from datetime import datetime
 import pytest
 
 import vectorbt as vbt
-
 from tests.utils import isclose
 
 qs_available = True
@@ -797,14 +797,14 @@ class TestAccessors:
         if qs_available:
             pd.testing.assert_series_equal(
                 rets.vbt.returns.qs.sharpe(),
-                qs.stats.sharpe(rets.dropna(), periods=365, trading_year_days=365, rf=0.01)
+                qs.stats.sharpe(rets.dropna(), periods=365, rf=0.01)
             )
             pd.testing.assert_series_equal(
                 rets.vbt.returns(freq='h', year_freq='252d').qs.sharpe(),
-                qs.stats.sharpe(rets.dropna(), periods=252 * 24, trading_year_days=252 * 24, rf=0.01)
+                qs.stats.sharpe(rets.dropna(), periods=252 * 24, rf=0.01)
             )
             pd.testing.assert_series_equal(
-                rets.vbt.returns(freq='h', year_freq='252d').qs.sharpe(periods=252, trading_year_days=252, rf=0),
+                rets.vbt.returns(freq='h', year_freq='252d').qs.sharpe(periods=252, periods_per_year=252, rf=0),
                 qs.stats.sharpe(rets.dropna())
             )
             assert rets['a'].vbt.returns(benchmark_rets=benchmark_rets['a']).qs.r_squared() == 0.6321016849785153

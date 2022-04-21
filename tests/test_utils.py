@@ -1,13 +1,15 @@
-import numpy as np
-import pandas as pd
-from numba import njit
-import pytest
+import asyncio
 import os
 from collections import namedtuple
-from itertools import product, combinations
-import asyncio
-import pytz
 from copy import copy, deepcopy
+from datetime import datetime as _datetime, timedelta as _timedelta, time as _time, timezone as _timezone
+from itertools import product, combinations
+
+import numpy as np
+import pandas as pd
+import pytest
+import pytz
+from numba import njit
 
 import vectorbt as vbt
 from vectorbt.utils import (
@@ -26,7 +28,6 @@ from vectorbt.utils import (
     tags,
     template
 )
-from datetime import datetime as _datetime, timedelta as _timedelta, time as _time, timezone as _timezone
 
 seed = 42
 
@@ -2427,15 +2428,15 @@ class TestDatetime:
 
     def test_to_timezone(self):
         assert datetime_.to_timezone('UTC') == _timezone.utc
-        assert datetime_.to_timezone('Europe/Berlin') == _timezone(_timedelta(hours=2))
+        assert isinstance(datetime_.to_timezone('Europe/Berlin'), _timezone)
         assert datetime_.to_timezone('Europe/Berlin', to_py_timezone=False) == pytz.timezone('Europe/Berlin')
         assert datetime_.to_timezone('+0500') == _timezone(_timedelta(hours=5))
         assert datetime_.to_timezone(_timezone(_timedelta(hours=1))) == _timezone(_timedelta(hours=1))
-        assert datetime_.to_timezone(pytz.timezone('Europe/Berlin')) == _timezone(_timedelta(hours=2))
+        assert isinstance(datetime_.to_timezone(pytz.timezone('Europe/Berlin')), _timezone)
         assert datetime_.to_timezone(1) == _timezone(_timedelta(hours=1))
         assert datetime_.to_timezone(0.5) == _timezone(_timedelta(hours=0.5))
         with pytest.raises(Exception):
-            _ = datetime_.to_timezone('+05')
+            datetime_.to_timezone('+05')
 
     def test_to_tzaware_datetime(self):
         assert datetime_.to_tzaware_datetime(0.5) == \

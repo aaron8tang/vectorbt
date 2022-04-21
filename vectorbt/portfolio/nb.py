@@ -19,23 +19,23 @@ other Numba-compatible types.
     Accumulation of roundoff error possible.
     See [here](https://en.wikipedia.org/wiki/Round-off_error#Accumulation_of_roundoff_error) for explanation.
 
-    Rounding errors can cause trades and positions to not close properly.
+    Rounding errors can cause trades and positions to not close properly:
 
-    Example:
+    ```pycon
+    >>> print('%.50f' % 0.1)  # has positive error
+    0.10000000000000000555111512312578270211815834045410
 
-        >>> print('%.50f' % 0.1)  # has positive error
-        0.10000000000000000555111512312578270211815834045410
+    >>> # many buy transactions with positive error -> cannot close position
+    >>> sum([0.1 for _ in range(1000000)]) - 100000
+    1.3328826753422618e-06
 
-        >>> # many buy transactions with positive error -> cannot close position
-        >>> sum([0.1 for _ in range(1000000)]) - 100000
-        1.3328826753422618e-06
+    >>> print('%.50f' % 0.3)  # has negative error
+    0.29999999999999998889776975374843459576368331909180
 
-        >>> print('%.50f' % 0.3)  # has negative error
-        0.29999999999999998889776975374843459576368331909180
-
-        >>> # many sell transactions with negative error -> cannot close position
-        >>> 300000 - sum([0.3 for _ in range(1000000)])
-        5.657668225467205e-06
+    >>> # many sell transactions with negative error -> cannot close position
+    >>> 300000 - sum([0.3 for _ in range(1000000)])
+    5.657668225467205e-06
+    ```
 
     While vectorbt has implemented tolerance checks when comparing floats for equality,
     adding/subtracting small amounts large number of times may still introduce a noticable
@@ -44,24 +44,24 @@ other Numba-compatible types.
     To mitigate this issue, avoid repeating lots of micro-transactions of the same sign.
     For example, reduce by `np.inf` or `position_now` to close a long/short position.
 
-    See `vectorbt.utils.math` for current tolerance values.
+    See `vectorbt.utils.math_` for current tolerance values.
 """
 
 import numpy as np
 from numba import njit
 
 from vectorbt import _typing as tp
+from vectorbt.base.reshape_fns import flex_select_auto_nb
+from vectorbt.generic import nb as generic_nb
+from vectorbt.portfolio.enums import *
+from vectorbt.returns import nb as returns_nb
+from vectorbt.utils.array_ import insert_argsort_nb
 from vectorbt.utils.math_ import (
     is_close_nb,
     is_close_or_less_nb,
     is_less_nb,
     add_nb
 )
-from vectorbt.utils.array_ import insert_argsort_nb
-from vectorbt.base.reshape_fns import flex_select_auto_nb
-from vectorbt.generic import nb as generic_nb
-from vectorbt.returns import nb as returns_nb
-from vectorbt.portfolio.enums import *
 
 
 # ############# Order processing ############# #
@@ -83,6 +83,7 @@ def buy_nb(exec_state: ExecuteOrderState,
            slippage: float = 0.,
            min_size: float = 0.,
            max_size: float = np.inf,
+           size_granularity: float = np.nan,
            lock_cash: bool = False,
            allow_partial: bool = True,
            percent: float = np.nan) -> tp.Tuple[ExecuteOrderState, OrderResult]:
@@ -142,28 +143,44 @@ def buy_nb(exec_state: ExecuteOrderState,
 
         adj_size = max_size
 
+    # Adjust granularity
+    if not np.isnan(size_granularity):
+        adj_size = adj_size // size_granularity * size_granularity
+
     # Get cash required to complete this order
     req_cash = adj_size * adj_price
     req_fees = req_cash * fees + fixed_fees
-    adj_req_cash = req_cash + req_fees
+    total_req_cash = req_cash + req_fees
 
-    if is_close_or_less_nb(adj_req_cash, cash_limit):
+    if is_close_or_less_nb(total_req_cash, cash_limit):
         # Sufficient amount of cash
         final_size = adj_size
         fees_paid = req_fees
-        final_cash = adj_req_cash
+        final_req_cash = total_req_cash
     else:
         # Insufficient amount of cash, size will be less than requested
 
         # For fees of 10% and 1$ per transaction, you can buy for 90$ (new_req_cash)
         # to spend 100$ (cash_limit) in total
-        new_req_cash = add_nb(cash_limit, -fixed_fees) / (1 + fees)
-        if new_req_cash <= 0:
+        max_req_cash = add_nb(cash_limit, -fixed_fees) / (1 + fees)
+        if max_req_cash <= 0:
             return exec_state, order_not_filled_nb(OrderStatus.Rejected, OrderStatusInfo.CantCoverFees)
 
-        final_size = new_req_cash / adj_price
-        fees_paid = cash_limit - new_req_cash
-        final_cash = cash_limit
+        max_acq_size = max_req_cash / adj_price
+
+        if not np.isnan(size_granularity):
+            # Adjust granularity
+            final_size = max_acq_size // size_granularity * size_granularity
+            new_req_cash = final_size * adj_price
+            fees_paid = new_req_cash * fees + fixed_fees
+            final_req_cash = new_req_cash + fees_paid
+        else:
+            final_size = max_acq_size
+            fees_paid = cash_limit - max_req_cash
+            final_req_cash = cash_limit
+
+    if is_close_nb(adj_size, 0):
+        return exec_state, order_not_filled_nb(OrderStatus.Ignored, OrderStatusInfo.SizeZero)
 
     # Check against minimum size
     if is_less_nb(final_size, min_size):
@@ -174,7 +191,7 @@ def buy_nb(exec_state: ExecuteOrderState,
         return exec_state, order_not_filled_nb(OrderStatus.Rejected, OrderStatusInfo.PartialFill)
 
     # Update current cash balance and position
-    new_cash = add_nb(exec_state.cash, -final_cash)
+    new_cash = add_nb(exec_state.cash, -final_req_cash)
     new_position = add_nb(exec_state.position, final_size)
 
     # Update current debt and free cash
@@ -186,10 +203,10 @@ def buy_nb(exec_state: ExecuteOrderState,
         avg_entry_price = exec_state.debt / abs(exec_state.position)
         debt_diff = short_size * avg_entry_price
         new_debt = add_nb(exec_state.debt, -debt_diff)
-        new_free_cash = add_nb(exec_state.free_cash + 2 * debt_diff, -final_cash)
+        new_free_cash = add_nb(exec_state.free_cash + 2 * debt_diff, -final_req_cash)
     else:
         new_debt = exec_state.debt
-        new_free_cash = add_nb(exec_state.free_cash, -final_cash)
+        new_free_cash = add_nb(exec_state.free_cash, -final_req_cash)
 
     # Return filled order
     order_result = OrderResult(
@@ -219,6 +236,7 @@ def sell_nb(exec_state: ExecuteOrderState,
             slippage: float = 0.,
             min_size: float = 0.,
             max_size: float = np.inf,
+            size_granularity: float = np.nan,
             lock_cash: bool = False,
             allow_partial: bool = True,
             percent: float = np.nan) -> tp.Tuple[ExecuteOrderState, OrderResult]:
@@ -284,6 +302,10 @@ def sell_nb(exec_state: ExecuteOrderState,
         if exec_state.position == 0:
             return exec_state, order_not_filled_nb(OrderStatus.Rejected, OrderStatusInfo.NoOpenPosition)
 
+    # Adjust granularity
+    if not np.isnan(size_granularity):
+        size_limit = size_limit // size_granularity * size_granularity
+
     if is_close_nb(size_limit, 0):
         return exec_state, order_not_filled_nb(OrderStatus.Ignored, OrderStatusInfo.SizeZero)
 
@@ -302,12 +324,12 @@ def sell_nb(exec_state: ExecuteOrderState,
     fees_paid = acq_cash * fees + fixed_fees
 
     # Get final cash by subtracting costs
-    final_cash = add_nb(acq_cash, -fees_paid)
-    if final_cash < 0:
+    final_acq_cash = add_nb(acq_cash, -fees_paid)
+    if final_acq_cash < 0:
         return exec_state, order_not_filled_nb(OrderStatus.Rejected, OrderStatusInfo.CantCoverFees)
 
     # Update current cash balance and position
-    new_cash = exec_state.cash + final_cash
+    new_cash = exec_state.cash + final_acq_cash
     new_position = add_nb(exec_state.position, -size_limit)
 
     # Update current debt and free cash
@@ -318,11 +340,11 @@ def sell_nb(exec_state: ExecuteOrderState,
             short_size = abs(new_position)
         short_value = short_size * adj_price
         new_debt = exec_state.debt + short_value
-        free_cash_diff = add_nb(final_cash, -2 * short_value)
+        free_cash_diff = add_nb(final_acq_cash, -2 * short_value)
         new_free_cash = add_nb(exec_state.free_cash, free_cash_diff)
     else:
         new_debt = exec_state.debt
-        new_free_cash = exec_state.free_cash + final_cash
+        new_free_cash = exec_state.free_cash + final_acq_cash
 
     # Return filled order
     order_result = OrderResult(
@@ -409,16 +431,18 @@ def execute_order_nb(state: ProcessOrderState, order: Order) -> tp.Tuple[Execute
         raise ValueError("position is negative but order.direction is Direction.LongOnly")
     if order.direction == Direction.ShortOnly and position > 0:
         raise ValueError("position is positive but order.direction is Direction.ShortOnly")
-    if not np.isfinite(order.fees) or order.fees < 0:
-        raise ValueError("order.fees must be finite and 0 or greater")
-    if not np.isfinite(order.fixed_fees) or order.fixed_fees < 0:
-        raise ValueError("order.fixed_fees must be finite and 0 or greater")
+    if not np.isfinite(order.fees):
+        raise ValueError("order.fees must be finite")
+    if not np.isfinite(order.fixed_fees):
+        raise ValueError("order.fixed_fees must be finite")
     if not np.isfinite(order.slippage) or order.slippage < 0:
         raise ValueError("order.slippage must be finite and 0 or greater")
     if not np.isfinite(order.min_size) or order.min_size < 0:
         raise ValueError("order.min_size must be finite and 0 or greater")
-    if order.max_size <= 0:
+    if np.isnan(order.max_size) or order.max_size <= 0:
         raise ValueError("order.max_size must be greater than 0")
+    if np.isinf(order.size_granularity) or order.size_granularity <= 0:
+        raise ValueError("order.size_granularity must be either NaN or finite and greater than 0")
     if not np.isfinite(order.reject_prob) or order.reject_prob < 0 or order.reject_prob > 1:
         raise ValueError("order.reject_prob must be between 0 and 1")
 
@@ -482,6 +506,7 @@ def execute_order_nb(state: ProcessOrderState, order: Order) -> tp.Tuple[Execute
             slippage=order.slippage,
             min_size=order.min_size,
             max_size=order.max_size,
+            size_granularity=order.size_granularity,
             lock_cash=order.lock_cash,
             allow_partial=order.allow_partial,
             percent=percent
@@ -497,6 +522,7 @@ def execute_order_nb(state: ProcessOrderState, order: Order) -> tp.Tuple[Execute
             slippage=order.slippage,
             min_size=order.min_size,
             max_size=order.max_size,
+            size_granularity=order.size_granularity,
             lock_cash=order.lock_cash,
             allow_partial=order.allow_partial,
             percent=percent
@@ -551,6 +577,7 @@ def fill_log_record_nb(record: tp.Record,
     record['req_slippage'] = order.slippage
     record['req_min_size'] = order.min_size
     record['req_max_size'] = order.max_size
+    record['req_size_granularity'] = order.size_granularity
     record['req_reject_prob'] = order.reject_prob
     record['req_lock_cash'] = order.lock_cash
     record['req_allow_partial'] = order.allow_partial
@@ -750,6 +777,7 @@ def order_nb(size: float = np.nan,
              slippage: float = 0.,
              min_size: float = 0.,
              max_size: float = np.inf,
+             size_granularity: float = np.nan,
              reject_prob: float = 0.,
              lock_cash: bool = False,
              allow_partial: bool = True,
@@ -762,18 +790,19 @@ def order_nb(size: float = np.nan,
     return Order(
         size=float(size),
         price=float(price),
-        size_type=size_type,
-        direction=direction,
+        size_type=int(size_type),
+        direction=int(direction),
         fees=float(fees),
         fixed_fees=float(fixed_fees),
         slippage=float(slippage),
         min_size=float(min_size),
         max_size=float(max_size),
+        size_granularity=float(size_granularity),
         reject_prob=float(reject_prob),
-        lock_cash=lock_cash,
-        allow_partial=allow_partial,
-        raise_reject=raise_reject,
-        log=log
+        lock_cash=bool(lock_cash),
+        allow_partial=bool(allow_partial),
+        raise_reject=bool(raise_reject),
+        log=bool(log)
     )
 
 
@@ -784,6 +813,7 @@ def close_position_nb(price: float = np.inf,
                       slippage: float = 0.,
                       min_size: float = 0.,
                       max_size: float = np.inf,
+                      size_granularity: float = np.nan,
                       reject_prob: float = 0.,
                       lock_cash: bool = False,
                       allow_partial: bool = True,
@@ -801,6 +831,7 @@ def close_position_nb(price: float = np.inf,
         slippage=slippage,
         min_size=min_size,
         max_size=max_size,
+        size_granularity=size_granularity,
         reject_prob=reject_prob,
         lock_cash=lock_cash,
         allow_partial=allow_partial,
@@ -1100,6 +1131,7 @@ def replace_inf_price_nb(prev_close: float, close: float, order: Order) -> Order
         slippage=order.slippage,
         min_size=order.min_size,
         max_size=order.max_size,
+        size_granularity=order.size_granularity,
         reject_prob=order.reject_prob,
         lock_cash=order.lock_cash,
         allow_partial=order.allow_partial,
@@ -1281,6 +1313,7 @@ def simulate_from_orders_nb(target_shape: tp.Shape,
                             slippage: tp.ArrayLike = np.asarray(0.),
                             min_size: tp.ArrayLike = np.asarray(0.),
                             max_size: tp.ArrayLike = np.asarray(np.inf),
+                            size_granularity: tp.ArrayLike = np.asarray(np.nan),
                             reject_prob: tp.ArrayLike = np.asarray(0.),
                             lock_cash: tp.ArrayLike = np.asarray(False),
                             allow_partial: tp.ArrayLike = np.asarray(True),
@@ -1306,33 +1339,33 @@ def simulate_from_orders_nb(target_shape: tp.Shape,
 
         Single value should be passed as a 0-dim array (for example, by using `np.asarray(value)`).
 
-    ## Example
+    Usage:
+        * Buy and hold using all cash and closing price (default):
 
-    Buy and hold using all cash and closing price (default):
+        ```pycon
+        >>> import numpy as np
+        >>> from vectorbt.records.nb import col_map_nb
+        >>> from vectorbt.portfolio.nb import simulate_from_orders_nb, asset_flow_nb
+        >>> from vectorbt.portfolio.enums import Direction
 
-    ```python-repl
-    >>> import numpy as np
-    >>> from vectorbt.records.nb import col_map_nb
-    >>> from vectorbt.portfolio.nb import simulate_from_orders_nb, asset_flow_nb
-    >>> from vectorbt.portfolio.enums import Direction
-
-    >>> close = np.array([1, 2, 3, 4, 5])[:, None]
-    >>> order_records, _ = simulate_from_orders_nb(
-    ...     target_shape=close.shape,
-    ...     close=close,
-    ...     group_lens=np.array([1]),
-    ...     init_cash=np.array([100]),
-    ...     call_seq=np.full(close.shape, 0)
-    ... )
-    >>> col_map = col_map_nb(order_records['col'], close.shape[1])
-    >>> asset_flow = asset_flow_nb(close.shape, order_records, col_map, Direction.Both)
-    >>> asset_flow
-    array([[100.],
-           [  0.],
-           [  0.],
-           [  0.],
-           [  0.]])
-    ```"""
+        >>> close = np.array([1, 2, 3, 4, 5])[:, None]
+        >>> order_records, _ = simulate_from_orders_nb(
+        ...     target_shape=close.shape,
+        ...     close=close,
+        ...     group_lens=np.array([1]),
+        ...     init_cash=np.array([100]),
+        ...     call_seq=np.full(close.shape, 0)
+        ... )
+        >>> col_map = col_map_nb(order_records['col'], close.shape[1])
+        >>> asset_flow = asset_flow_nb(close.shape, order_records, col_map, Direction.Both)
+        >>> asset_flow
+        array([[100.],
+               [  0.],
+               [  0.],
+               [  0.],
+               [  0.]])
+        ```
+    """
     check_group_lens_nb(group_lens, target_shape[1])
     cash_sharing = is_grouped_nb(group_lens)
     check_group_init_cash_nb(group_lens, target_shape[1], init_cash, cash_sharing)
@@ -1438,6 +1471,7 @@ def simulate_from_orders_nb(target_shape: tp.Shape,
                     slippage=flex_select_auto_nb(slippage, i, col, flex_2d),
                     min_size=flex_select_auto_nb(min_size, i, col, flex_2d),
                     max_size=flex_select_auto_nb(max_size, i, col, flex_2d),
+                    size_granularity=flex_select_auto_nb(size_granularity, i, col, flex_2d),
                     reject_prob=flex_select_auto_nb(reject_prob, i, col, flex_2d),
                     lock_cash=flex_select_auto_nb(lock_cash, i, col, flex_2d),
                     allow_partial=flex_select_auto_nb(allow_partial, i, col, flex_2d),
@@ -1691,6 +1725,7 @@ def signals_to_size_nb(position_now: float,
                         order_size -= size / val_price_now
                     else:
                         order_size -= size
+                size_type = SizeType.Amount
         elif is_long_exit:
             direction = Direction.LongOnly
             if accumulate == AccumulationMode.Both or accumulate == AccumulationMode.RemoveOnly:
@@ -1721,6 +1756,7 @@ def signals_to_size_nb(position_now: float,
                         order_size += size / val_price_now
                     else:
                         order_size += size
+                size_type = SizeType.Amount
         elif is_short_exit:
             direction = Direction.ShortOnly
             if accumulate == AccumulationMode.Both or accumulate == AccumulationMode.RemoveOnly:
@@ -1823,6 +1859,7 @@ def simulate_from_signal_func_nb(target_shape: tp.Shape,
                                  slippage: tp.ArrayLike = np.asarray(0.),
                                  min_size: tp.ArrayLike = np.asarray(0.),
                                  max_size: tp.ArrayLike = np.asarray(np.inf),
+                                 size_granularity: tp.ArrayLike = np.asarray(np.nan),
                                  reject_prob: tp.ArrayLike = np.asarray(0.),
                                  lock_cash: tp.ArrayLike = np.asarray(False),
                                  allow_partial: tp.ArrayLike = np.asarray(True),
@@ -1876,35 +1913,35 @@ def simulate_from_signal_func_nb(target_shape: tp.Shape,
 
         Single value should be passed as a 0-dim array (for example, by using `np.asarray(value)`).
 
-    ## Example
+    Usage:
+        * Buy and hold using all cash and closing price (default):
 
-    Buy and hold using all cash and closing price (default):
+        ```pycon
+        >>> import numpy as np
+        >>> from vectorbt.records.nb import col_map_nb
+        >>> from vectorbt.portfolio import nb
+        >>> from vectorbt.portfolio.enums import Direction
 
-    ```python-repl
-    >>> import numpy as np
-    >>> from vectorbt.records.nb import col_map_nb
-    >>> from vectorbt.portfolio import nb
-    >>> from vectorbt.portfolio.enums import Direction
-
-    >>> close = np.array([1, 2, 3, 4, 5])[:, None]
-    >>> order_records, _ = nb.simulate_from_signal_func_nb(
-    ...     target_shape=close.shape,
-    ...     close=close,
-    ...     group_lens=np.array([1]),
-    ...     init_cash=np.array([100]),
-    ...     call_seq=np.full(close.shape, 0),
-    ...     signal_func_nb=nb.dir_enex_signal_func_nb,
-    ...     signal_args=(np.asarray(True), np.asarray(False), np.asarray(Direction.LongOnly))
-    ... )
-    >>> col_map = col_map_nb(order_records['col'], close.shape[1])
-    >>> asset_flow = nb.asset_flow_nb(close.shape, order_records, col_map, Direction.Both)
-    >>> asset_flow
-    array([[100.],
-           [  0.],
-           [  0.],
-           [  0.],
-           [  0.]])
-    ```"""
+        >>> close = np.array([1, 2, 3, 4, 5])[:, None]
+        >>> order_records, _ = nb.simulate_from_signal_func_nb(
+        ...     target_shape=close.shape,
+        ...     close=close,
+        ...     group_lens=np.array([1]),
+        ...     init_cash=np.array([100]),
+        ...     call_seq=np.full(close.shape, 0),
+        ...     signal_func_nb=nb.dir_enex_signal_func_nb,
+        ...     signal_args=(np.asarray(True), np.asarray(False), np.asarray(Direction.LongOnly))
+        ... )
+        >>> col_map = col_map_nb(order_records['col'], close.shape[1])
+        >>> asset_flow = nb.asset_flow_nb(close.shape, order_records, col_map, Direction.Both)
+        >>> asset_flow
+        array([[100.],
+               [  0.],
+               [  0.],
+               [  0.],
+               [  0.]])
+        ```
+    """
     check_group_lens_nb(group_lens, target_shape[1])
     cash_sharing = is_grouped_nb(group_lens)
     check_group_init_cash_nb(group_lens, target_shape[1], init_cash, cash_sharing)
@@ -2219,6 +2256,7 @@ def simulate_from_signal_func_nb(target_shape: tp.Shape,
                         slippage=_slippage,
                         min_size=flex_select_auto_nb(min_size, i, col, flex_2d),
                         max_size=flex_select_auto_nb(max_size, i, col, flex_2d),
+                        size_granularity=flex_select_auto_nb(size_granularity, i, col, flex_2d),
                         reject_prob=flex_select_auto_nb(reject_prob, i, col, flex_2d),
                         lock_cash=flex_select_auto_nb(lock_cash, i, col, flex_2d),
                         allow_partial=flex_select_auto_nb(allow_partial, i, col, flex_2d),
@@ -2417,9 +2455,9 @@ def simulate_nb(target_shape: tp.Shape,
     Returns order records of layout `vectorbt.portfolio.enums.order_dt` and log records of layout
     `vectorbt.portfolio.enums.log_dt`.
 
-    As opposed to `simulate_row_wise_nb`, order processing happens in row-major order, that is,
-    from top to bottom slower (along time axis) and from left to right faster (along asset axis).
-    See [Glossary](https://numpy.org/doc/stable/glossary.html).
+    As opposed to `simulate_row_wise_nb`, order processing happens in column-major order.
+    Column-major order means processing the entire column/group with all rows before moving to the next one.
+    See [Row- and column-major order](https://en.wikipedia.org/wiki/Row-_and_column-major_order).
 
     Args:
         target_shape (tuple): See `vectorbt.portfolio.enums.SimulationContext.target_shape`.
@@ -2524,228 +2562,226 @@ def simulate_nb(target_shape: tp.Shape,
         not been processed yet and thus empty. Accessing them will not trigger any errors or warnings,
         but provide you with arbitrary data (see [np.empty](https://numpy.org/doc/stable/reference/generated/numpy.empty.html)).
 
-    ## Call hierarchy
+    Call hierarchy:
+        Like most things in the vectorbt universe, simulation is also done by iterating over a (imaginary) frame.
+        This frame consists of two dimensions: time (rows) and assets/features (columns).
+        Each element of this frame is a potential order, which gets generated by calling an order function.
 
-    Like most things in the vectorbt universe, simulation is also done by iterating over a (imaginary) frame.
-    This frame consists of two dimensions: time (rows) and assets/features (columns).
-    Each element of this frame is a potential order, which gets generated by calling an order function.
+        The question is: how do we move across this frame to simulate trading? There are two movement patterns:
+        column-major (as done by `simulate_nb`) and row-major order (as done by `simulate_row_wise_nb`).
+        In each of these patterns, we are always moving from top to bottom (time axis) and from left to right
+        (asset/feature axis); the only difference between them is across which axis we are moving faster:
+        do we want to process each column first (thus assuming that columns are independent) or each row?
+        Choosing between them is mostly a matter of preference, but it also makes different data being
+        available when generating an order.
 
-    The question is: how do we move across this frame to simulate trading? There are two movement patterns:
-    row-major (as done by `simulate_nb`) and column-major order (as done by `simulate_row_wise_nb`).
-    In each of these patterns, we are always moving from top to bottom (time axis) and from left to right
-    (asset/feature axis); the only difference between them is across which axis we are moving faster:
-    do we want to process orders column-by-column (thus assuming that columns are independent) or row-by-row?
-    Choosing between them is mostly a matter of preference, but it also makes different data being
-    available when generating an order.
+        The frame is further divided into "blocks": columns, groups, rows, segments, and elements.
+        For example, columns can be grouped into groups that may or may not share the same capital.
+        Regardless of capital sharing, each collection of elements within a group and a time step is called
+        a segment, which simply defines a single context (such as shared capital) for one or multiple orders.
+        Each segment can also define a custom sequence (a so-called call sequence) in which orders are executed.
 
-    The frame is further divided into "blocks": columns, groups, rows, segments, and elements.
-    For example, columns can be grouped into groups that may or may not share the same capital.
-    Regardless of capital sharing, each collection of elements within a group and a time step is called
-    a segment, which simply defines a single context (such as shared capital) for one or multiple orders.
-    Each segment can also define a custom sequence (a so-called call sequence) in which orders are executed.
+        You can imagine each of these blocks as a rectangle drawn over different parts of the frame,
+        and having its own context and pre/post-processing function. The pre-processing function is a
+        simple callback that is called before entering the block, and can be provided by the user to, for example,
+        prepare arrays or do some custom calculations. It must return a tuple (can be empty) that is then unpacked and
+        passed as arguments to the pre- and postprocessing function coming next in the call hierarchy.
+        The postprocessing function can be used, for example, to write user-defined arrays such as returns.
 
-    You can imagine each of these blocks as a rectangle drawn over different parts of the frame,
-    and having its own context and pre/post-processing function. The pre-processing function is a
-    simple callback that is called before entering the block, and can be provided by the user to, for example,
-    prepare arrays or do some custom calculations. It must return a tuple (can be empty) that is then unpacked and
-    passed as arguments to the pre- and postprocessing function coming next in the call hierarchy.
-    The postprocessing function can be used, for example, to write user-defined arrays such as returns.
+        Let's demonstrate a frame with one group of two columns and one group of one column, and the
+        following call sequence:
 
-    Let's demonstrate a frame with one group of two columns and one group of one column, and the
-    following call sequence:
+        ```plaintext
+        array([[0, 1, 0],
+               [1, 0, 0]])
+        ```
 
-    ```plaintext
-    array([[0, 1, 0],
-           [1, 0, 0]])
-    ```
+        ![](/assets/images/simulate_nb.gif)
 
-    ![](/docs/img/simulate_nb.gif)
+        And here is the context information available at each step:
 
-    And here is the context information available at each step:
+        ![](/assets/images/context_info.png)
 
-    ![](/docs/img/context_info.png)
+    Usage:
+        * Create a group of three assets together sharing 100$ and simulate an equal-weighted portfolio
+        that rebalances every second tick, all without leaving Numba:
 
-    ## Example
+        ```pycon
+        >>> import numpy as np
+        >>> import pandas as pd
+        >>> from collections import namedtuple
+        >>> from numba import njit
+        >>> from vectorbt.generic.plotting import Scatter
+        >>> from vectorbt.records.nb import col_map_nb
+        >>> from vectorbt.portfolio.enums import SizeType, Direction
+        >>> from vectorbt.portfolio.nb import (
+        ...     get_col_elem_nb,
+        ...     get_elem_nb,
+        ...     order_nb,
+        ...     simulate_nb,
+        ...     simulate_row_wise_nb,
+        ...     build_call_seq,
+        ...     sort_call_seq_nb,
+        ...     asset_flow_nb,
+        ...     assets_nb,
+        ...     asset_value_nb
+        ... )
 
-    Create a group of three assets together sharing 100$ and simulate an equal-weighted portfolio
-    that rebalances every second tick, all without leaving Numba:
+        >>> @njit
+        ... def pre_sim_func_nb(c):
+        ...     print('before simulation')
+        ...     # Create a temporary array and pass it down the stack
+        ...     order_value_out = np.empty(c.target_shape[1], dtype=np.float_)
+        ...     return (order_value_out,)
 
-    ```python-repl
-    >>> import numpy as np
-    >>> import pandas as pd
-    >>> from collections import namedtuple
-    >>> from numba import njit
-    >>> from vectorbt.generic.plotting import Scatter
-    >>> from vectorbt.records.nb import col_map_nb
-    >>> from vectorbt.portfolio.enums import SizeType, Direction
-    >>> from vectorbt.portfolio.nb import (
-    ...     get_col_elem_nb,
-    ...     get_elem_nb,
-    ...     order_nb,
-    ...     simulate_nb,
-    ...     simulate_row_wise_nb,
-    ...     build_call_seq,
-    ...     sort_call_seq_nb,
-    ...     asset_flow_nb,
-    ...     assets_nb,
-    ...     asset_value_nb
-    ... )
+        >>> @njit
+        ... def pre_group_func_nb(c, order_value_out):
+        ...     print('\\tbefore group', c.group)
+        ...     # Forward down the stack (you can omit pre_group_func_nb entirely)
+        ...     return (order_value_out,)
 
-    >>> @njit
-    ... def pre_sim_func_nb(c):
-    ...     print('before simulation')
-    ...     # Create a temporary array and pass it down the stack
-    ...     order_value_out = np.empty(c.target_shape[1], dtype=np.float_)
-    ...     return (order_value_out,)
+        >>> @njit
+        ... def pre_segment_func_nb(c, order_value_out, size, price, size_type, direction):
+        ...     print('\\t\\tbefore segment', c.i)
+        ...     for col in range(c.from_col, c.to_col):
+        ...         # Here we use order price for group valuation
+        ...         c.last_val_price[col] = get_col_elem_nb(c, col, price)
+        ...
+        ...     # Reorder call sequence of this segment such that selling orders come first and buying last
+        ...     # Rearranges c.call_seq_now based on order value (size, size_type, direction, and val_price)
+        ...     # Utilizes flexible indexing using get_col_elem_nb (as we did above)
+        ...     sort_call_seq_nb(c, size, size_type, direction, order_value_out[c.from_col:c.to_col])
+        ...     # Forward nothing
+        ...     return ()
 
-    >>> @njit
-    ... def pre_group_func_nb(c, order_value_out):
-    ...     print('\\tbefore group', c.group)
-    ...     # Forward down the stack (you can omit pre_group_func_nb entirely)
-    ...     return (order_value_out,)
+        >>> @njit
+        ... def order_func_nb(c, size, price, size_type, direction, fees, fixed_fees, slippage):
+        ...     print('\\t\\t\\tcreating order', c.call_idx, 'at column', c.col)
+        ...     # Create and return an order
+        ...     return order_nb(
+        ...         size=get_elem_nb(c, size),
+        ...         price=get_elem_nb(c, price),
+        ...         size_type=get_elem_nb(c, size_type),
+        ...         direction=get_elem_nb(c, direction),
+        ...         fees=get_elem_nb(c, fees),
+        ...         fixed_fees=get_elem_nb(c, fixed_fees),
+        ...         slippage=get_elem_nb(c, slippage)
+        ...     )
 
-    >>> @njit
-    ... def pre_segment_func_nb(c, order_value_out, size, price, size_type, direction):
-    ...     print('\\t\\tbefore segment', c.i)
-    ...     for col in range(c.from_col, c.to_col):
-    ...         # Here we use order price for group valuation
-    ...         c.last_val_price[col] = get_col_elem_nb(c, col, price)
-    ...
-    ...     # Reorder call sequence of this segment such that selling orders come first and buying last
-    ...     # Rearranges c.call_seq_now based on order value (size, size_type, direction, and val_price)
-    ...     # Utilizes flexible indexing using get_col_elem_nb (as we did above)
-    ...     sort_call_seq_nb(c, size, size_type, direction, order_value_out[c.from_col:c.to_col])
-    ...     # Forward nothing
-    ...     return ()
+        >>> @njit
+        ... def post_order_func_nb(c):
+        ...     print('\\t\\t\\t\\torder status:', c.order_result.status)
+        ...     return None
 
-    >>> @njit
-    ... def order_func_nb(c, size, price, size_type, direction, fees, fixed_fees, slippage):
-    ...     print('\\t\\t\\tcreating order', c.call_idx, 'at column', c.col)
-    ...     # Create and return an order
-    ...     return order_nb(
-    ...         size=get_elem_nb(c, size),
-    ...         price=get_elem_nb(c, price),
-    ...         size_type=get_elem_nb(c, size_type),
-    ...         direction=get_elem_nb(c, direction),
-    ...         fees=get_elem_nb(c, fees),
-    ...         fixed_fees=get_elem_nb(c, fixed_fees),
-    ...         slippage=get_elem_nb(c, slippage)
-    ...     )
+        >>> @njit
+        ... def post_segment_func_nb(c, order_value_out):
+        ...     print('\\t\\tafter segment', c.i)
+        ...     return None
 
-    >>> @njit
-    ... def post_order_func_nb(c):
-    ...     print('\\t\\t\\t\\torder status:', c.order_result.status)
-    ...     return None
+        >>> @njit
+        ... def post_group_func_nb(c, order_value_out):
+        ...     print('\\tafter group', c.group)
+        ...     return None
 
-    >>> @njit
-    ... def post_segment_func_nb(c, order_value_out):
-    ...     print('\\t\\tafter segment', c.i)
-    ...     return None
+        >>> @njit
+        ... def post_sim_func_nb(c):
+        ...     print('after simulation')
+        ...     return None
 
-    >>> @njit
-    ... def post_group_func_nb(c, order_value_out):
-    ...     print('\\tafter group', c.group)
-    ...     return None
+        >>> target_shape = (5, 3)
+        >>> np.random.seed(42)
+        >>> group_lens = np.array([3])  # one group of three columns
+        >>> init_cash = np.array([100.])  # one capital per group
+        >>> cash_sharing = True
+        >>> call_seq = build_call_seq(target_shape, group_lens)  # will be overridden
+        >>> segment_mask = np.array([True, False, True, False, True])[:, None]
+        >>> segment_mask = np.copy(np.broadcast_to(segment_mask, target_shape))
+        >>> size = np.asarray(1 / target_shape[1])  # scalars must become 0-dim arrays
+        >>> price = close = np.random.uniform(1, 10, size=target_shape)
+        >>> size_type = np.asarray(SizeType.TargetPercent)
+        >>> direction = np.asarray(Direction.LongOnly)
+        >>> fees = np.asarray(0.001)
+        >>> fixed_fees = np.asarray(1.)
+        >>> slippage = np.asarray(0.001)
 
-    >>> @njit
-    ... def post_sim_func_nb(c):
-    ...     print('after simulation')
-    ...     return None
+        >>> order_records, log_records = simulate_nb(
+        ...     target_shape,
+        ...     group_lens,
+        ...     init_cash,
+        ...     cash_sharing,
+        ...     call_seq,
+        ...     segment_mask=segment_mask,
+        ...     pre_sim_func_nb=pre_sim_func_nb,
+        ...     post_sim_func_nb=post_sim_func_nb,
+        ...     pre_group_func_nb=pre_group_func_nb,
+        ...     post_group_func_nb=post_group_func_nb,
+        ...     pre_segment_func_nb=pre_segment_func_nb,
+        ...     pre_segment_args=(size, price, size_type, direction),
+        ...     post_segment_func_nb=post_segment_func_nb,
+        ...     order_func_nb=order_func_nb,
+        ...     order_args=(size, price, size_type, direction, fees, fixed_fees, slippage),
+        ...     post_order_func_nb=post_order_func_nb
+        ... )
+        before simulation
+            before group 0
+                before segment 0
+                    creating order 0 at column 0
+                        order status: 0
+                    creating order 1 at column 1
+                        order status: 0
+                    creating order 2 at column 2
+                        order status: 0
+                after segment 0
+                before segment 2
+                    creating order 0 at column 1
+                        order status: 0
+                    creating order 1 at column 2
+                        order status: 0
+                    creating order 2 at column 0
+                        order status: 0
+                after segment 2
+                before segment 4
+                    creating order 0 at column 0
+                        order status: 0
+                    creating order 1 at column 2
+                        order status: 0
+                    creating order 2 at column 1
+                        order status: 0
+                after segment 4
+            after group 0
+        after simulation
 
-    >>> target_shape = (5, 3)
-    >>> np.random.seed(42)
-    >>> group_lens = np.array([3])  # one group of three columns
-    >>> init_cash = np.array([100.])  # one capital per group
-    >>> cash_sharing = True
-    >>> call_seq = build_call_seq(target_shape, group_lens)  # will be overridden
-    >>> segment_mask = np.array([True, False, True, False, True])[:, None]
-    >>> segment_mask = np.copy(np.broadcast_to(segment_mask, target_shape))
-    >>> size = np.asarray(1 / target_shape[1])  # scalars must become 0-dim arrays
-    >>> price = close = np.random.uniform(1, 10, size=target_shape)
-    >>> size_type = np.asarray(SizeType.TargetPercent)
-    >>> direction = np.asarray(Direction.LongOnly)
-    >>> fees = np.asarray(0.001)
-    >>> fixed_fees = np.asarray(1.)
-    >>> slippage = np.asarray(0.001)
+        >>> pd.DataFrame.from_records(order_records)
+           id  col  idx       size     price      fees  side
+        0   0    0    0   7.626262  4.375232  1.033367     0
+        1   1    1    0   3.488053  9.565985  1.033367     0
+        2   2    2    0   3.972040  7.595533  1.030170     0
+        3   3    1    2   0.920352  8.786790  1.008087     1
+        4   4    2    2   0.448747  6.403625  1.002874     1
+        5   5    0    2   5.210115  1.524275  1.007942     0
+        6   6    0    4   7.899568  8.483492  1.067016     1
+        7   7    2    4  12.378281  2.639061  1.032667     0
+        8   8    1    4  10.713236  2.913963  1.031218     0
 
-    >>> order_records, log_records = simulate_nb(
-    ...     target_shape,
-    ...     group_lens,
-    ...     init_cash,
-    ...     cash_sharing,
-    ...     call_seq,
-    ...     segment_mask=segment_mask,
-    ...     pre_sim_func_nb=pre_sim_func_nb,
-    ...     post_sim_func_nb=post_sim_func_nb,
-    ...     pre_group_func_nb=pre_group_func_nb,
-    ...     post_group_func_nb=post_group_func_nb,
-    ...     pre_segment_func_nb=pre_segment_func_nb,
-    ...     pre_segment_args=(size, price, size_type, direction),
-    ...     post_segment_func_nb=post_segment_func_nb,
-    ...     order_func_nb=order_func_nb,
-    ...     order_args=(size, price, size_type, direction, fees, fixed_fees, slippage),
-    ...     post_order_func_nb=post_order_func_nb
-    ... )
-    before simulation
-        before group 0
-            before segment 0
-                creating order 0 at column 0
-                    order status: 0
-                creating order 1 at column 1
-                    order status: 0
-                creating order 2 at column 2
-                    order status: 0
-            after segment 0
-            before segment 2
-                creating order 0 at column 1
-                    order status: 0
-                creating order 1 at column 2
-                    order status: 0
-                creating order 2 at column 0
-                    order status: 0
-            after segment 2
-            before segment 4
-                creating order 0 at column 0
-                    order status: 0
-                creating order 1 at column 2
-                    order status: 0
-                creating order 2 at column 1
-                    order status: 0
-            after segment 4
-        after group 0
-    after simulation
+        >>> call_seq
+        array([[0, 1, 2],
+               [0, 1, 2],
+               [1, 2, 0],
+               [0, 1, 2],
+               [0, 2, 1]])
 
-    >>> pd.DataFrame.from_records(order_records)
-       id  col  idx       size     price      fees  side
-    0   0    0    0   7.626262  4.375232  1.033367     0
-    1   1    1    0   3.488053  9.565985  1.033367     0
-    2   2    2    0   3.972040  7.595533  1.030170     0
-    3   3    1    2   0.920352  8.786790  1.008087     1
-    4   4    2    2   0.448747  6.403625  1.002874     1
-    5   5    0    2   5.210115  1.524275  1.007942     0
-    6   6    0    4   7.899568  8.483492  1.067016     1
-    7   7    2    4  12.378281  2.639061  1.032667     0
-    8   8    1    4  10.713236  2.913963  1.031218     0
+        >>> col_map = col_map_nb(order_records['col'], target_shape[1])
+        >>> asset_flow = asset_flow_nb(target_shape, order_records, col_map, Direction.Both)
+        >>> assets = assets_nb(asset_flow)
+        >>> asset_value = asset_value_nb(close, assets)
+        >>> Scatter(data=asset_value).fig.show()
+        ```
 
-    >>> call_seq
-    array([[0, 1, 2],
-           [0, 1, 2],
-           [1, 2, 0],
-           [0, 1, 2],
-           [0, 2, 1]])
+        ![](/assets/images/simulate_nb.svg)
 
-    >>> col_map = col_map_nb(order_records['col'], target_shape[1])
-    >>> asset_flow = asset_flow_nb(target_shape, order_records, col_map, Direction.Both)
-    >>> assets = assets_nb(asset_flow)
-    >>> asset_value = asset_value_nb(close, assets)
-    >>> Scatter(data=asset_value).fig.show()
-    ```
-
-    ![](/docs/img/simulate_nb.svg)
-
-    Note that the last order in a group with cash sharing is always disadvantaged
-    as it has a bit less funds than the previous orders due to costs, which are not
-    included when valuating the group.
+        Note that the last order in a group with cash sharing is always disadvantaged
+        as it has a bit less funds than the previous orders due to costs, which are not
+        included when valuating the group.
     """
     check_group_lens_nb(group_lens, target_shape[1])
     check_group_init_cash_nb(group_lens, target_shape[1], init_cash, cash_sharing)
@@ -3285,8 +3321,9 @@ def simulate_row_wise_nb(target_shape: tp.Shape,
                          max_orders: tp.Optional[int] = None,
                          max_logs: int = 0,
                          flex_2d: bool = True) -> tp.Tuple[tp.RecordArray, tp.RecordArray]:
-    """Same as `simulate_nb`, but iterates using row-major order, with the rows
-    changing fastest, and the columns/groups changing slowest.
+    """Same as `simulate_nb`, but iterates in row-major order.
+
+    Row-major order means processing the entire row with all groups/columns before moving to the next one.
 
     The main difference is that instead of `pre_group_func_nb` it now exposes `pre_row_func_nb`,
     which is executed per entire row. It should accept `vectorbt.portfolio.enums.RowContext`.
@@ -3301,83 +3338,82 @@ def simulate_row_wise_nb(target_shape: tp.Shape,
         You can only safely access data points that are to the left of the current group and
         rows that are to the top of the current row.
 
-    ## Call hierarchy
+    Call hierarchy:
+        Let's illustrate the same example as in `simulate_nb` but adapted for this function:
 
-    Let's illustrate the same example as in `simulate_nb` but adapted for this function:
+        ![](/assets/images/simulate_row_wise_nb.gif)
 
-    ![](/docs/img/simulate_row_wise_nb.gif)
+    Usage:
+        * Running the same example as in `simulate_nb` but adapted for this function:
 
-    ## Example
+        ```pycon
+        >>> @njit
+        ... def pre_row_func_nb(c, order_value_out):
+        ...     print('\\tbefore row', c.i)
+        ...     # Forward down the stack
+        ...     return (order_value_out,)
 
-    Running the same example as in `simulate_nb` but adapted for this function:
-    ```python-repl
-    >>> @njit
-    ... def pre_row_func_nb(c, order_value_out):
-    ...     print('\\tbefore row', c.i)
-    ...     # Forward down the stack
-    ...     return (order_value_out,)
+        >>> @njit
+        ... def post_row_func_nb(c, order_value_out):
+        ...     print('\\tafter row', c.i)
+        ...     return None
 
-    >>> @njit
-    ... def post_row_func_nb(c, order_value_out):
-    ...     print('\\tafter row', c.i)
-    ...     return None
-
-    >>> call_seq = build_call_seq(target_shape, group_lens)
-    >>> order_records, log_records = simulate_row_wise_nb(
-    ...     target_shape,
-    ...     group_lens,
-    ...     init_cash,
-    ...     cash_sharing,
-    ...     call_seq,
-    ...     segment_mask=segment_mask,
-    ...     pre_sim_func_nb=pre_sim_func_nb,
-    ...     post_sim_func_nb=post_sim_func_nb,
-    ...     pre_row_func_nb=pre_row_func_nb,
-    ...     post_row_func_nb=post_row_func_nb,
-    ...     pre_segment_func_nb=pre_segment_func_nb,
-    ...     pre_segment_args=(size, price, size_type, direction),
-    ...     post_segment_func_nb=post_segment_func_nb,
-    ...     order_func_nb=order_func_nb,
-    ...     order_args=(size, price, size_type, direction, fees, fixed_fees, slippage),
-    ...     post_order_func_nb=post_order_func_nb
-    ... )
-    before simulation
-        before row 0
-            before segment 0
-                creating order 0 at column 0
-                    order status: 0
-                creating order 1 at column 1
-                    order status: 0
-                creating order 2 at column 2
-                    order status: 0
-            after segment 0
-        after row 0
-        before row 1
-        after row 1
-        before row 2
-            before segment 2
-                creating order 0 at column 1
-                    order status: 0
-                creating order 1 at column 2
-                    order status: 0
-                creating order 2 at column 0
-                    order status: 0
-            after segment 2
-        after row 2
-        before row 3
-        after row 3
-        before row 4
-            before segment 4
-                creating order 0 at column 0
-                    order status: 0
-                creating order 1 at column 2
-                    order status: 0
-                creating order 2 at column 1
-                    order status: 0
-            after segment 4
-        after row 4
-    after simulation
-    ```
+        >>> call_seq = build_call_seq(target_shape, group_lens)
+        >>> order_records, log_records = simulate_row_wise_nb(
+        ...     target_shape,
+        ...     group_lens,
+        ...     init_cash,
+        ...     cash_sharing,
+        ...     call_seq,
+        ...     segment_mask=segment_mask,
+        ...     pre_sim_func_nb=pre_sim_func_nb,
+        ...     post_sim_func_nb=post_sim_func_nb,
+        ...     pre_row_func_nb=pre_row_func_nb,
+        ...     post_row_func_nb=post_row_func_nb,
+        ...     pre_segment_func_nb=pre_segment_func_nb,
+        ...     pre_segment_args=(size, price, size_type, direction),
+        ...     post_segment_func_nb=post_segment_func_nb,
+        ...     order_func_nb=order_func_nb,
+        ...     order_args=(size, price, size_type, direction, fees, fixed_fees, slippage),
+        ...     post_order_func_nb=post_order_func_nb
+        ... )
+        before simulation
+            before row 0
+                before segment 0
+                    creating order 0 at column 0
+                        order status: 0
+                    creating order 1 at column 1
+                        order status: 0
+                    creating order 2 at column 2
+                        order status: 0
+                after segment 0
+            after row 0
+            before row 1
+            after row 1
+            before row 2
+                before segment 2
+                    creating order 0 at column 1
+                        order status: 0
+                    creating order 1 at column 2
+                        order status: 0
+                    creating order 2 at column 0
+                        order status: 0
+                after segment 2
+            after row 2
+            before row 3
+            after row 3
+            before row 4
+                before segment 4
+                    creating order 0 at column 0
+                        order status: 0
+                    creating order 1 at column 2
+                        order status: 0
+                    creating order 2 at column 1
+                        order status: 0
+                after segment 4
+            after row 4
+        after simulation
+        ```
     """
     check_group_lens_nb(group_lens, target_shape[1])
     check_group_init_cash_nb(group_lens, target_shape[1], init_cash, cash_sharing)
@@ -3934,156 +3970,155 @@ def flex_simulate_nb(target_shape: tp.Shape,
         exception. In this case, you should increase `max_orders`. This cannot be done automatically and
         dynamically to avoid performance degradation.
 
-    ## Example
+    Usage:
+        * The same example as in `simulate_nb`:
 
-    The same example as in `simulate_nb`:
+        ```pycon
+        >>> import numpy as np
+        >>> from numba import njit
+        >>> from vectorbt.portfolio.enums import SizeType, Direction
+        >>> from vectorbt.portfolio.nb import (
+        ...     get_col_elem_nb,
+        ...     order_nb,
+        ...     order_nothing_nb,
+        ...     flex_simulate_nb,
+        ...     flex_simulate_row_wise_nb,
+        ...     sort_call_seq_out_nb
+        ... )
 
-    ```python-repl
-    >>> import numpy as np
-    >>> from numba import njit
-    >>> from vectorbt.portfolio.enums import SizeType, Direction
-    >>> from vectorbt.portfolio.nb import (
-    ...     get_col_elem_nb,
-    ...     order_nb,
-    ...     order_nothing_nb,
-    ...     flex_simulate_nb,
-    ...     flex_simulate_row_wise_nb,
-    ...     sort_call_seq_out_nb
-    ... )
+        >>> @njit
+        ... def pre_sim_func_nb(c):
+        ...     print('before simulation')
+        ...     return ()
 
-    >>> @njit
-    ... def pre_sim_func_nb(c):
-    ...     print('before simulation')
-    ...     return ()
+        >>> @njit
+        ... def pre_group_func_nb(c):
+        ...     print('\\tbefore group', c.group)
+        ...     # Create temporary arrays and pass them down the stack
+        ...     order_value_out = np.empty(c.group_len, dtype=np.float_)
+        ...     call_seq_out = np.empty(c.group_len, dtype=np.int_)
+        ...     # Forward down the stack
+        ...     return (order_value_out, call_seq_out)
 
-    >>> @njit
-    ... def pre_group_func_nb(c):
-    ...     print('\\tbefore group', c.group)
-    ...     # Create temporary arrays and pass them down the stack
-    ...     order_value_out = np.empty(c.group_len, dtype=np.float_)
-    ...     call_seq_out = np.empty(c.group_len, dtype=np.int_)
-    ...     # Forward down the stack
-    ...     return (order_value_out, call_seq_out)
+        >>> @njit
+        ... def pre_segment_func_nb(c, order_value_out, call_seq_out, size, price, size_type, direction):
+        ...     print('\\t\\tbefore segment', c.i)
+        ...     for col in range(c.from_col, c.to_col):
+        ...         # Here we use order price for group valuation
+        ...         c.last_val_price[col] = get_col_elem_nb(c, col, price)
+        ...
+        ...     # Same as for simulate_nb, but since we don't have a predefined c.call_seq_now anymore,
+        ...     # we need to store our new call sequence somewhere else
+        ...     call_seq_out[:] = np.arange(c.group_len)
+        ...     sort_call_seq_out_nb(c, size, size_type, direction, order_value_out, call_seq_out)
+        ...
+        ...     # Forward the sorted call sequence
+        ...     return (call_seq_out,)
 
-    >>> @njit
-    ... def pre_segment_func_nb(c, order_value_out, call_seq_out, size, price, size_type, direction):
-    ...     print('\\t\\tbefore segment', c.i)
-    ...     for col in range(c.from_col, c.to_col):
-    ...         # Here we use order price for group valuation
-    ...         c.last_val_price[col] = get_col_elem_nb(c, col, price)
-    ...
-    ...     # Same as for simulate_nb, but since we don't have a predefined c.call_seq_now anymore,
-    ...     # we need to store our new call sequence somewhere else
-    ...     call_seq_out[:] = np.arange(c.group_len)
-    ...     sort_call_seq_out_nb(c, size, size_type, direction, order_value_out, call_seq_out)
-    ...
-    ...     # Forward the sorted call sequence
-    ...     return (call_seq_out,)
+        >>> @njit
+        ... def flex_order_func_nb(c, call_seq_out, size, price, size_type, direction, fees, fixed_fees, slippage):
+        ...     if c.call_idx < c.group_len:
+        ...         col = c.from_col + call_seq_out[c.call_idx]
+        ...         print('\\t\\t\\tcreating order', c.call_idx, 'at column', col)
+        ...         # # Create and return an order
+        ...         return col, order_nb(
+        ...             size=get_col_elem_nb(c, col, size),
+        ...             price=get_col_elem_nb(c, col, price),
+        ...             size_type=get_col_elem_nb(c, col, size_type),
+        ...             direction=get_col_elem_nb(c, col, direction),
+        ...             fees=get_col_elem_nb(c, col, fees),
+        ...             fixed_fees=get_col_elem_nb(c, col, fixed_fees),
+        ...             slippage=get_col_elem_nb(c, col, slippage)
+        ...         )
+        ...     # All columns already processed -> break the loop
+        ...     print('\\t\\t\\tbreaking out of the loop')
+        ...     return -1, order_nothing_nb()
 
-    >>> @njit
-    ... def flex_order_func_nb(c, call_seq_out, size, price, size_type, direction, fees, fixed_fees, slippage):
-    ...     if c.call_idx < c.group_len:
-    ...         col = c.from_col + call_seq_out[c.call_idx]
-    ...         print('\\t\\t\\tcreating order', c.call_idx, 'at column', col)
-    ...         # # Create and return an order
-    ...         return col, order_nb(
-    ...             size=get_col_elem_nb(c, col, size),
-    ...             price=get_col_elem_nb(c, col, price),
-    ...             size_type=get_col_elem_nb(c, col, size_type),
-    ...             direction=get_col_elem_nb(c, col, direction),
-    ...             fees=get_col_elem_nb(c, col, fees),
-    ...             fixed_fees=get_col_elem_nb(c, col, fixed_fees),
-    ...             slippage=get_col_elem_nb(c, col, slippage)
-    ...         )
-    ...     # All columns already processed -> break the loop
-    ...     print('\\t\\t\\tbreaking out of the loop')
-    ...     return -1, order_nothing_nb()
+        >>> @njit
+        ... def post_order_func_nb(c, call_seq_out):
+        ...     print('\\t\\t\\t\\torder status:', c.order_result.status)
+        ...     return None
 
-    >>> @njit
-    ... def post_order_func_nb(c, call_seq_out):
-    ...     print('\\t\\t\\t\\torder status:', c.order_result.status)
-    ...     return None
+        >>> @njit
+        ... def post_segment_func_nb(c, order_value_out, call_seq_out):
+        ...     print('\\t\\tafter segment', c.i)
+        ...     return None
 
-    >>> @njit
-    ... def post_segment_func_nb(c, order_value_out, call_seq_out):
-    ...     print('\\t\\tafter segment', c.i)
-    ...     return None
+        >>> @njit
+        ... def post_group_func_nb(c):
+        ...     print('\\tafter group', c.group)
+        ...     return None
 
-    >>> @njit
-    ... def post_group_func_nb(c):
-    ...     print('\\tafter group', c.group)
-    ...     return None
+        >>> @njit
+        ... def post_sim_func_nb(c):
+        ...     print('after simulation')
+        ...     return None
 
-    >>> @njit
-    ... def post_sim_func_nb(c):
-    ...     print('after simulation')
-    ...     return None
+        >>> target_shape = (5, 3)
+        >>> np.random.seed(42)
+        >>> group_lens = np.array([3])  # one group of three columns
+        >>> init_cash = np.array([100.])  # one capital per group
+        >>> cash_sharing = True
+        >>> call_seq = build_call_seq(target_shape, group_lens)  # will be overridden
+        >>> segment_mask = np.array([True, False, True, False, True])[:, None]
+        >>> segment_mask = np.copy(np.broadcast_to(segment_mask, target_shape))
+        >>> size = np.asarray(1 / target_shape[1])  # scalars must become 0-dim arrays
+        >>> price = close = np.random.uniform(1, 10, size=target_shape)
+        >>> size_type = np.asarray(SizeType.TargetPercent)
+        >>> direction = np.asarray(Direction.LongOnly)
+        >>> fees = np.asarray(0.001)
+        >>> fixed_fees = np.asarray(1.)
+        >>> slippage = np.asarray(0.001)
 
-    >>> target_shape = (5, 3)
-    >>> np.random.seed(42)
-    >>> group_lens = np.array([3])  # one group of three columns
-    >>> init_cash = np.array([100.])  # one capital per group
-    >>> cash_sharing = True
-    >>> call_seq = build_call_seq(target_shape, group_lens)  # will be overridden
-    >>> segment_mask = np.array([True, False, True, False, True])[:, None]
-    >>> segment_mask = np.copy(np.broadcast_to(segment_mask, target_shape))
-    >>> size = np.asarray(1 / target_shape[1])  # scalars must become 0-dim arrays
-    >>> price = close = np.random.uniform(1, 10, size=target_shape)
-    >>> size_type = np.asarray(SizeType.TargetPercent)
-    >>> direction = np.asarray(Direction.LongOnly)
-    >>> fees = np.asarray(0.001)
-    >>> fixed_fees = np.asarray(1.)
-    >>> slippage = np.asarray(0.001)
-
-    >>> order_records, log_records = flex_simulate_nb(
-    ...     target_shape,
-    ...     group_lens,
-    ...     init_cash,
-    ...     cash_sharing,
-    ...     segment_mask=segment_mask,
-    ...     pre_sim_func_nb=pre_sim_func_nb,
-    ...     post_sim_func_nb=post_sim_func_nb,
-    ...     pre_group_func_nb=pre_group_func_nb,
-    ...     post_group_func_nb=post_group_func_nb,
-    ...     pre_segment_func_nb=pre_segment_func_nb,
-    ...     pre_segment_args=(size, price, size_type, direction),
-    ...     post_segment_func_nb=post_segment_func_nb,
-    ...     flex_order_func_nb=flex_order_func_nb,
-    ...     flex_order_args=(size, price, size_type, direction, fees, fixed_fees, slippage),
-    ...     post_order_func_nb=post_order_func_nb
-    ... )
-    before simulation
-        before group 0
-            before segment 0
-                creating order 0 at column 0
-                    order status: 0
-                creating order 1 at column 1
-                    order status: 0
-                creating order 2 at column 2
-                    order status: 0
-                breaking out of the loop
-            after segment 0
-            before segment 2
-                creating order 0 at column 1
-                    order status: 0
-                creating order 1 at column 2
-                    order status: 0
-                creating order 2 at column 0
-                    order status: 0
-                breaking out of the loop
-            after segment 2
-            before segment 4
-                creating order 0 at column 0
-                    order status: 0
-                creating order 1 at column 2
-                    order status: 0
-                creating order 2 at column 1
-                    order status: 0
-                breaking out of the loop
-            after segment 4
-        after group 0
-    after simulation
-    ```
+        >>> order_records, log_records = flex_simulate_nb(
+        ...     target_shape,
+        ...     group_lens,
+        ...     init_cash,
+        ...     cash_sharing,
+        ...     segment_mask=segment_mask,
+        ...     pre_sim_func_nb=pre_sim_func_nb,
+        ...     post_sim_func_nb=post_sim_func_nb,
+        ...     pre_group_func_nb=pre_group_func_nb,
+        ...     post_group_func_nb=post_group_func_nb,
+        ...     pre_segment_func_nb=pre_segment_func_nb,
+        ...     pre_segment_args=(size, price, size_type, direction),
+        ...     post_segment_func_nb=post_segment_func_nb,
+        ...     flex_order_func_nb=flex_order_func_nb,
+        ...     flex_order_args=(size, price, size_type, direction, fees, fixed_fees, slippage),
+        ...     post_order_func_nb=post_order_func_nb
+        ... )
+        before simulation
+            before group 0
+                before segment 0
+                    creating order 0 at column 0
+                        order status: 0
+                    creating order 1 at column 1
+                        order status: 0
+                    creating order 2 at column 2
+                        order status: 0
+                    breaking out of the loop
+                after segment 0
+                before segment 2
+                    creating order 0 at column 1
+                        order status: 0
+                    creating order 1 at column 2
+                        order status: 0
+                    creating order 2 at column 0
+                        order status: 0
+                    breaking out of the loop
+                after segment 2
+                before segment 4
+                    creating order 0 at column 0
+                        order status: 0
+                    creating order 1 at column 2
+                        order status: 0
+                    creating order 2 at column 1
+                        order status: 0
+                    breaking out of the loop
+                after segment 4
+            after group 0
+        after simulation
+        ```
     """
 
     check_group_lens_nb(group_lens, target_shape[1])
@@ -5252,70 +5287,70 @@ def get_entry_trades_nb(order_records: tp.RecordArray, close: tp.Array2d, col_ma
 
     Entry trade records are buy orders in a long position and sell orders in a short position.
 
-    ## Example
+    Usage:
+        ```pycon
+        >>> import numpy as np
+        >>> import pandas as pd
+        >>> from numba import njit
+        >>> from vectorbt.records.nb import col_map_nb
+        >>> from vectorbt.portfolio.nb import simulate_from_orders_nb, get_entry_trades_nb
 
-    ```python-repl
-    >>> import numpy as np
-    >>> import pandas as pd
-    >>> from numba import njit
-    >>> from vectorbt.records.nb import col_map_nb
-    >>> from vectorbt.portfolio.nb import simulate_from_orders_nb, get_entry_trades_nb
+        >>> close = order_price = np.array([
+        ...     [1, 6],
+        ...     [2, 5],
+        ...     [3, 4],
+        ...     [4, 3],
+        ...     [5, 2],
+        ...     [6, 1]
+        ... ])
+        >>> size = np.asarray([
+        ...     [1, -1],
+        ...     [0.1, -0.1],
+        ...     [-1, 1],
+        ...     [-0.1, 0.1],
+        ...     [1, -1],
+        ...     [-2, 2]
+        ... ])
+        >>> target_shape = close.shape
+        >>> group_lens = np.full(target_shape[1], 1)
+        >>> init_cash = np.full(target_shape[1], 100)
+        >>> call_seq = np.full(target_shape, 0)
 
-    >>> close = order_price = np.array([
-    ...     [1, 6],
-    ...     [2, 5],
-    ...     [3, 4],
-    ...     [4, 3],
-    ...     [5, 2],
-    ...     [6, 1]
-    ... ])
-    >>> size = np.asarray([
-    ...     [1, -1],
-    ...     [0.1, -0.1],
-    ...     [-1, 1],
-    ...     [-0.1, 0.1],
-    ...     [1, -1],
-    ...     [-2, 2]
-    ... ])
-    >>> target_shape = close.shape
-    >>> group_lens = np.full(target_shape[1], 1)
-    >>> init_cash = np.full(target_shape[1], 100)
-    >>> call_seq = np.full(target_shape, 0)
+        >>> order_records, log_records = simulate_from_orders_nb(
+        ...     target_shape,
+        ...     group_lens,
+        ...     init_cash,
+        ...     call_seq,
+        ...     size=size,
+        ...     price=close,
+        ...     fees=np.asarray(0.01),
+        ...     slippage=np.asarray(0.01)
+        ... )
 
-    >>> order_records, log_records = simulate_from_orders_nb(
-    ...     target_shape,
-    ...     group_lens,
-    ...     init_cash,
-    ...     call_seq,
-    ...     size=size,
-    ...     price=close,
-    ...     fees=np.asarray(0.01),
-    ...     slippage=np.asarray(0.01)
-    ... )
+        >>> col_map = col_map_nb(order_records['col'], target_shape[1])
+        >>> entry_trade_records = get_entry_trades_nb(order_records, close, col_map)
+        >>> pd.DataFrame.from_records(entry_trade_records)
+           id  col  size  entry_idx  entry_price  entry_fees  exit_idx  exit_price  \\
+        0   0    0   1.0          0         1.01     0.01010         3    3.060000
+        1   1    0   0.1          1         2.02     0.00202         3    3.060000
+        2   2    0   1.0          4         5.05     0.05050         5    5.940000
+        3   3    0   1.0          5         5.94     0.05940         5    6.000000
+        4   4    1   1.0          0         5.94     0.05940         3    3.948182
+        5   5    1   0.1          1         4.95     0.00495         3    3.948182
+        6   6    1   1.0          4         1.98     0.01980         5    1.010000
+        7   7    1   1.0          5         1.01     0.01010         5    1.000000
 
-    >>> col_map = col_map_nb(order_records['col'], target_shape[1])
-    >>> entry_trade_records = get_entry_trades_nb(order_records, close, col_map)
-    >>> pd.DataFrame.from_records(entry_trade_records)
-       id  col  size  entry_idx  entry_price  entry_fees  exit_idx  exit_price  \\
-    0   0    0   1.0          0         1.01     0.01010         3    3.060000
-    1   1    0   0.1          1         2.02     0.00202         3    3.060000
-    2   2    0   1.0          4         5.05     0.05050         5    5.940000
-    3   3    0   1.0          5         5.94     0.05940         5    6.000000
-    4   4    1   1.0          0         5.94     0.05940         3    3.948182
-    5   5    1   0.1          1         4.95     0.00495         3    3.948182
-    6   6    1   1.0          4         1.98     0.01980         5    1.010000
-    7   7    1   1.0          5         1.01     0.01010         5    1.000000
-
-       exit_fees       pnl    return  direction  status  parent_id
-    0   0.030600  2.009300  1.989406          0       1          0
-    1   0.003060  0.098920  0.489703          0       1          0
-    2   0.059400  0.780100  0.154475          0       1          1
-    3   0.000000 -0.119400 -0.020101          1       0          2
-    4   0.039482  1.892936  0.318676          1       1          3
-    5   0.003948  0.091284  0.184411          1       1          3
-    6   0.010100  0.940100  0.474798          1       1          4
-    7   0.000000 -0.020100 -0.019901          0       0          5
-    ```"""
+           exit_fees       pnl    return  direction  status  parent_id
+        0   0.030600  2.009300  1.989406          0       1          0
+        1   0.003060  0.098920  0.489703          0       1          0
+        2   0.059400  0.780100  0.154475          0       1          1
+        3   0.000000 -0.119400 -0.020101          1       0          2
+        4   0.039482  1.892936  0.318676          1       1          3
+        5   0.003948  0.091284  0.184411          1       1          3
+        6   0.010100  0.940100  0.474798          1       1          4
+        7   0.000000 -0.020100 -0.019901          0       0          5
+        ```
+    """
     col_idxs, col_lens = col_map
     col_start_idxs = np.cumsum(col_lens) - col_lens
     records = np.empty(len(order_records), dtype=trade_dt)
@@ -5487,70 +5522,70 @@ def get_exit_trades_nb(order_records: tp.RecordArray, close: tp.Array2d, col_map
 
     Exit trade records are sell orders in a long position and buy orders in a short position.
 
-    ## Example
+    Usage:
+        ```pycon
+        >>> import numpy as np
+        >>> import pandas as pd
+        >>> from numba import njit
+        >>> from vectorbt.records.nb import col_map_nb
+        >>> from vectorbt.portfolio.nb import simulate_from_orders_nb, get_exit_trades_nb
 
-    ```python-repl
-    >>> import numpy as np
-    >>> import pandas as pd
-    >>> from numba import njit
-    >>> from vectorbt.records.nb import col_map_nb
-    >>> from vectorbt.portfolio.nb import simulate_from_orders_nb, get_exit_trades_nb
+        >>> close = order_price = np.array([
+        ...     [1, 6],
+        ...     [2, 5],
+        ...     [3, 4],
+        ...     [4, 3],
+        ...     [5, 2],
+        ...     [6, 1]
+        ... ])
+        >>> size = np.asarray([
+        ...     [1, -1],
+        ...     [0.1, -0.1],
+        ...     [-1, 1],
+        ...     [-0.1, 0.1],
+        ...     [1, -1],
+        ...     [-2, 2]
+        ... ])
+        >>> target_shape = close.shape
+        >>> group_lens = np.full(target_shape[1], 1)
+        >>> init_cash = np.full(target_shape[1], 100)
+        >>> call_seq = np.full(target_shape, 0)
 
-    >>> close = order_price = np.array([
-    ...     [1, 6],
-    ...     [2, 5],
-    ...     [3, 4],
-    ...     [4, 3],
-    ...     [5, 2],
-    ...     [6, 1]
-    ... ])
-    >>> size = np.asarray([
-    ...     [1, -1],
-    ...     [0.1, -0.1],
-    ...     [-1, 1],
-    ...     [-0.1, 0.1],
-    ...     [1, -1],
-    ...     [-2, 2]
-    ... ])
-    >>> target_shape = close.shape
-    >>> group_lens = np.full(target_shape[1], 1)
-    >>> init_cash = np.full(target_shape[1], 100)
-    >>> call_seq = np.full(target_shape, 0)
+        >>> order_records, log_records = simulate_from_orders_nb(
+        ...     target_shape,
+        ...     group_lens,
+        ...     init_cash,
+        ...     call_seq,
+        ...     size=size,
+        ...     price=close,
+        ...     fees=np.asarray(0.01),
+        ...     slippage=np.asarray(0.01)
+        ... )
 
-    >>> order_records, log_records = simulate_from_orders_nb(
-    ...     target_shape,
-    ...     group_lens,
-    ...     init_cash,
-    ...     call_seq,
-    ...     size=size,
-    ...     price=close,
-    ...     fees=np.asarray(0.01),
-    ...     slippage=np.asarray(0.01)
-    ... )
+        >>> col_map = col_map_nb(order_records['col'], target_shape[1])
+        >>> exit_trade_records = get_exit_trades_nb(order_records, close, col_map)
+        >>> pd.DataFrame.from_records(exit_trade_records)
+           id  col  size  entry_idx  entry_price  entry_fees  exit_idx  exit_price  \\
+        0   0    0   1.0          0     1.101818    0.011018         2        2.97
+        1   1    0   0.1          0     1.101818    0.001102         3        3.96
+        2   2    0   1.0          4     5.050000    0.050500         5        5.94
+        3   3    0   1.0          5     5.940000    0.059400         5        6.00
+        4   4    1   1.0          0     5.850000    0.058500         2        4.04
+        5   5    1   0.1          0     5.850000    0.005850         3        3.03
+        6   6    1   1.0          4     1.980000    0.019800         5        1.01
+        7   7    1   1.0          5     1.010000    0.010100         5        1.00
 
-    >>> col_map = col_map_nb(order_records['col'], target_shape[1])
-    >>> exit_trade_records = get_exit_trades_nb(order_records, close, col_map)
-    >>> pd.DataFrame.from_records(exit_trade_records)
-       id  col  size  entry_idx  entry_price  entry_fees  exit_idx  exit_price  \\
-    0   0    0   1.0          0     1.101818    0.011018         2        2.97
-    1   1    0   0.1          0     1.101818    0.001102         3        3.96
-    2   2    0   1.0          4     5.050000    0.050500         5        5.94
-    3   3    0   1.0          5     5.940000    0.059400         5        6.00
-    4   4    1   1.0          0     5.850000    0.058500         2        4.04
-    5   5    1   0.1          0     5.850000    0.005850         3        3.03
-    6   6    1   1.0          4     1.980000    0.019800         5        1.01
-    7   7    1   1.0          5     1.010000    0.010100         5        1.00
-
-       exit_fees       pnl    return  direction  status  parent_id
-    0    0.02970  1.827464  1.658589          0       1          0
-    1    0.00396  0.280756  2.548119          0       1          0
-    2    0.05940  0.780100  0.154475          0       1          1
-    3    0.00000 -0.119400 -0.020101          1       0          2
-    4    0.04040  1.711100  0.292496          1       1          3
-    5    0.00303  0.273120  0.466872          1       1          3
-    6    0.01010  0.940100  0.474798          1       1          4
-    7    0.00000 -0.020100 -0.019901          0       0          5
-    ```"""
+           exit_fees       pnl    return  direction  status  parent_id
+        0    0.02970  1.827464  1.658589          0       1          0
+        1    0.00396  0.280756  2.548119          0       1          0
+        2    0.05940  0.780100  0.154475          0       1          1
+        3    0.00000 -0.119400 -0.020101          1       0          2
+        4    0.04040  1.711100  0.292496          1       1          3
+        5    0.00303  0.273120  0.466872          1       1          3
+        6    0.01010  0.940100  0.474798          1       1          4
+        7    0.00000 -0.020100 -0.019901          0       0          5
+        ```
+    """
     col_idxs, col_lens = col_map
     col_start_idxs = np.cumsum(col_lens) - col_lens
     records = np.empty(len(order_records), dtype=trade_dt)
@@ -5822,32 +5857,31 @@ def get_positions_nb(trade_records: tp.RecordArray, col_map: tp.ColMap) -> tp.Re
 
     Trades can be entry trades, exit trades, and even positions themselves - all will produce the same results.
 
-    ## Example
+    Usage:
+        * Building upon the example in `get_exit_trades_nb`:
 
-    Building upon the example in `get_exit_trades_nb`:
+        ```pycon
+        >>> from vectorbt.portfolio.nb import get_positions_nb
 
-    ```python-repl
-    >>> from vectorbt.portfolio.nb import get_positions_nb
+        >>> col_map = col_map_nb(exit_trade_records['col'], target_shape[1])
+        >>> position_records = get_positions_nb(exit_trade_records, col_map)
+        >>> pd.DataFrame.from_records(position_records)
+           id  col  size  entry_idx  entry_price  entry_fees  exit_idx  exit_price  \\
+        0   0    0   1.1          0     1.101818     0.01212         3    3.060000
+        1   1    0   1.0          4     5.050000     0.05050         5    5.940000
+        2   2    0   1.0          5     5.940000     0.05940         5    6.000000
+        3   3    1   1.1          0     5.850000     0.06435         3    3.948182
+        4   4    1   1.0          4     1.980000     0.01980         5    1.010000
+        5   5    1   1.0          5     1.010000     0.01010         5    1.000000
 
-    >>> col_map = col_map_nb(exit_trade_records['col'], target_shape[1])
-    >>> position_records = get_positions_nb(exit_trade_records, col_map)
-    >>> pd.DataFrame.from_records(position_records)
-       id  col  size  entry_idx  entry_price  entry_fees  exit_idx  exit_price  \\
-    0   0    0   1.1          0     1.101818     0.01212         3    3.060000
-    1   1    0   1.0          4     5.050000     0.05050         5    5.940000
-    2   2    0   1.0          5     5.940000     0.05940         5    6.000000
-    3   3    1   1.1          0     5.850000     0.06435         3    3.948182
-    4   4    1   1.0          4     1.980000     0.01980         5    1.010000
-    5   5    1   1.0          5     1.010000     0.01010         5    1.000000
-
-       exit_fees      pnl    return  direction  status  parent_id
-    0    0.03366  2.10822  1.739455          0       1          0
-    1    0.05940  0.78010  0.154475          0       1          1
-    2    0.00000 -0.11940 -0.020101          1       0          2
-    3    0.04343  1.98422  0.308348          1       1          3
-    4    0.01010  0.94010  0.474798          1       1          4
-    5    0.00000 -0.02010 -0.019901          0       0          5
-    ```
+           exit_fees      pnl    return  direction  status  parent_id
+        0    0.03366  2.10822  1.739455          0       1          0
+        1    0.05940  0.78010  0.154475          0       1          1
+        2    0.00000 -0.11940 -0.020101          1       0          2
+        3    0.04343  1.98422  0.308348          1       1          3
+        4    0.01010  0.94010  0.474798          1       1          4
+        5    0.00000 -0.02010 -0.019901          0       0          5
+        ```
     """
     col_idxs, col_lens = col_map
     col_start_idxs = np.cumsum(col_lens) - col_lens

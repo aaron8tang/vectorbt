@@ -8,7 +8,7 @@
 
 We can access the adapter from `ReturnsAccessor`:
 
-```python-repl
+```pycon
 >>> import numpy as np
 >>> import pandas as pd
 >>> import vectorbt as vbt
@@ -24,7 +24,7 @@ We can access the adapter from `ReturnsAccessor`:
 
 Which is the same as:
 
-```python-repl
+```pycon
 >>> qs.stats.r_squared(rets, benchmark_rets)
 ```
 
@@ -34,7 +34,7 @@ First, we can define all parameters such as benchmark returns once and avoid pas
 to every function. Second, vectorbt automatically translates parameters passed to `ReturnsAccessor`
 for the use in quantstats.
 
-```python-repl
+```pycon
 >>> # Defaults that vectorbt understands
 >>> ret_acc = rets.vbt.returns(
 ...     benchmark_rets=benchmark_rets,
@@ -53,7 +53,7 @@ for the use in quantstats.
 >>> qs_defaults = dict(
 ...     benchmark=benchmark_rets,
 ...     periods=365,
-...     trading_year_days=365,
+...     periods_per_year=365,
 ...     rf=0.001
 ... )
 >>> ret_acc_qs = rets.vbt.returns.qs(defaults=qs_defaults)
@@ -70,11 +70,11 @@ It also merges the defaults defined in the settings, the defaults passed to `Ret
 and the defaults passed to `QSAdapter` itself, and matches them with the argument names listed
 in the function's signature.
 
-For example, the `periods` and `trading_year_days` arguments default to the annualization factor
+For example, the `periods` and `periods_per_year` arguments default to the annualization factor
 `ReturnsAccessor.ann_factor`, which itself is based on the `freq` argument. This makes the results
 produced by quantstats and vectorbt at least somewhat similar.
 
-```python-repl
+```pycon
 >>> vbt.settings.array_wrapper['freq'] = 'h'
 >>> vbt.settings.returns['year_freq'] = '365d'
 
@@ -87,7 +87,7 @@ produced by quantstats and vectorbt at least somewhat similar.
 
 We can still override any argument by overriding its default or by passing it directly to the function:
 
-```python-repl
+```pycon
 >>> rets.vbt.returns.qs(defaults=dict(periods=252)).sharpe()
 -1.5912029345745982
 
@@ -98,15 +98,15 @@ We can still override any argument by overriding its default or by passing it di
 -1.5912029345745982
 ```
 """
-import pandas as pd
 from inspect import getmembers, isfunction, signature, Parameter
-import warnings
+
+import pandas as pd
 import quantstats as qs
 
 from vectorbt import _typing as tp
+from vectorbt.returns.accessors import ReturnsAccessor
 from vectorbt.utils import checks
 from vectorbt.utils.config import merge_dicts, get_func_arg_names, Configured
-from vectorbt.returns.accessors import ReturnsAccessor
 
 
 def attach_qs_methods(cls: tp.Type[tp.T], replace_signature: bool = True) -> tp.Type[tp.T]:
@@ -143,8 +143,8 @@ def attach_qs_methods(cls: tp.Type[tp.T], replace_signature: bool = True) -> tp.
                                     pass_kwargs['benchmark'] = self.returns_accessor.benchmark_rets
                             elif arg_name == 'periods':
                                 pass_kwargs['periods'] = int(self.returns_accessor.ann_factor)
-                            elif arg_name == 'trading_year_days':
-                                pass_kwargs['trading_year_days'] = int(self.returns_accessor.ann_factor)
+                            elif arg_name == 'periods_per_year':
+                                pass_kwargs['periods_per_year'] = int(self.returns_accessor.ann_factor)
                         else:
                             pass_kwargs[arg_name] = kwargs[arg_name]
 

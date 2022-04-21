@@ -1,8 +1,9 @@
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
-from numba import njit
 import pytest
-from datetime import datetime
+from numba import njit
 
 import vectorbt as vbt
 from vectorbt.base import (
@@ -17,10 +18,6 @@ from vectorbt.base import (
 ray_available = True
 try:
     import ray
-
-    if ray.is_initialized():
-        ray.shutdown()
-    ray.init()
 except:
     ray_available = False
 
@@ -66,9 +63,13 @@ def setup_module():
     vbt.settings.caching.enabled = False
     vbt.settings.caching.whitelist = []
     vbt.settings.caching.blacklist = []
+    if ray_available:
+        ray.init(local_mode=True, num_cpus=1)
 
 
 def teardown_module():
+    if ray_available:
+        ray.shutdown()
     vbt.settings.reset()
 
 
@@ -1574,6 +1575,28 @@ class TestReshapeFns:
                 )
             )
 
+        broadcasted = reshape_fns.broadcast(
+            pd.DataFrame([[1, 2, 3]], columns=pd.Index(['a', 'b', 'c'], name='i1')),
+            pd.DataFrame([[4, 5, 6]], columns=pd.Index(['a', 'b', 'c'], name='i2')),
+            index_from='stack',
+            columns_from='stack',
+            drop_duplicates=True,
+            drop_redundant=True,
+            ignore_sr_names=True
+        )
+        pd.testing.assert_frame_equal(
+            broadcasted[0],
+            pd.DataFrame([[1, 2, 3]], columns=pd.MultiIndex.from_tuples([
+                ('a', 'a'), ('b', 'b'), ('c', 'c')
+            ], names=['i1', 'i2']))
+        )
+        pd.testing.assert_frame_equal(
+            broadcasted[1],
+            pd.DataFrame([[4, 5, 6]], columns=pd.MultiIndex.from_tuples([
+                ('a', 'a'), ('b', 'b'), ('c', 'c')
+            ], names=['i1', 'i2']))
+        )
+
     def test_broadcast_keep(self):
         # 1d
         to_broadcast = 0, a1, a2, sr_none, sr1, sr2
@@ -3025,7 +3048,7 @@ class TestAccessors:
             pd.testing.assert_frame_equal(
                 sr2.vbt.apply_and_concat(
                     3, np.array([1, 2, 3]), 10, apply_func=apply_func, d=100,
-                    keys=['a', 'b', 'c'], use_ray=True, ray_shutdown=True
+                    keys=['a', 'b', 'c'], use_ray=True
                 ),
                 target
             )
@@ -3090,7 +3113,7 @@ class TestAccessors:
             pd.testing.assert_frame_equal(
                 df2.vbt.apply_and_concat(
                     3, np.array([1, 2, 3]), 10, apply_func=apply_func, d=100,
-                    keys=['a', 'b', 'c'], use_ray=True, ray_shutdown=True
+                    keys=['a', 'b', 'c'], use_ray=True
                 ),
                 target2
             )
@@ -3244,8 +3267,7 @@ class TestAccessors:
                     [10, df4], 10, b=100,
                     combine_func=combine_func,
                     concat=True,
-                    use_ray=True,
-                    ray_shutdown=True
+                    use_ray=True
                 ),
                 target2
             )

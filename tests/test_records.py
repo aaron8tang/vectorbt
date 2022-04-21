@@ -1,14 +1,14 @@
-import vectorbt as vbt
+from datetime import datetime
+
 import numpy as np
 import pandas as pd
-from numba import njit
-from datetime import datetime
 import pytest
+from numba import njit
 
+import vectorbt as vbt
+from tests.utils import record_arrays_close
 from vectorbt.generic.enums import range_dt, drawdown_dt
 from vectorbt.portfolio.enums import order_dt, trade_dt, log_dt
-
-from tests.utils import record_arrays_close
 
 day_dt = np.timedelta64(86400000000000)
 
@@ -3366,10 +3366,26 @@ class TestLogs:
             ])
         )
         np.testing.assert_array_equal(
+            records_readable['Request Size Granularity'].values,
+            np.array([
+                np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan,
+                np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, np.nan,
+                np.nan, np.nan, np.nan, np.nan, np.nan, np.nan
+            ])
+        )
+        np.testing.assert_array_equal(
             records_readable['Request Rejection Prob'].values,
             np.array([
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0,
                 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0
+            ])
+        )
+        np.testing.assert_array_equal(
+            records_readable['Request Lock Cash'].values,
+            np.array([
+                False, False, False, False, False, False, False, False, False, False, False, False, False, False, False,
+                False, False, False, False, False, False, False, False, False, False, False, False, False, False, False,
+                False, False
             ])
         )
         np.testing.assert_array_equal(

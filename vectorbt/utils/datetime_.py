@@ -3,12 +3,13 @@
 
 """Utilities for working with dates and time."""
 
+import copy
+from datetime import datetime, timezone, timedelta, tzinfo, time
+
+import dateparser
 import numpy as np
 import pandas as pd
-import dateparser
-from datetime import datetime, timezone, timedelta, tzinfo, time
 import pytz
-import copy
 
 from vectorbt import _typing as tp
 
@@ -99,7 +100,7 @@ def to_timezone(tz: tp.TimezoneLike, to_py_timezone: tp.Optional[bool] = None, *
     if isinstance(tz, timedelta):
         tz = timezone(tz)
     if isinstance(tz, tzinfo):
-        if to_py_timezone or tz != copy.copy(tz):
+        if to_py_timezone:
             return timezone(tz.utcoffset(datetime.now()))
         return tz
     raise TypeError("Couldn't parse the timezone")

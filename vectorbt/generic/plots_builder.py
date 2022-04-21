@@ -3,19 +3,19 @@
 
 """Mixin for building plots out of subplots."""
 
-from collections import Counter
-import warnings
 import inspect
 import string
+import warnings
+from collections import Counter
 
 from vectorbt import _typing as tp
-from vectorbt.utils import checks
-from vectorbt.utils.config import Config, merge_dicts, get_func_arg_names
-from vectorbt.utils.template import deep_substitute
-from vectorbt.utils.tags import match_tags
-from vectorbt.utils.attr_ import get_dict_attr
-from vectorbt.utils.figure import make_subplots, get_domain
 from vectorbt.base.array_wrapper import Wrapping
+from vectorbt.utils import checks
+from vectorbt.utils.attr_ import get_dict_attr
+from vectorbt.utils.config import Config, merge_dicts, get_func_arg_names
+from vectorbt.utils.figure import make_subplots, get_domain
+from vectorbt.utils.tags import match_tags
+from vectorbt.utils.template import deep_substitute
 
 
 class MetaPlotsBuilderMixin(type):
@@ -116,7 +116,7 @@ class PlotsBuilderMixin(metaclass=MetaPlotsBuilderMixin):
                 If `resolve_plot_func` is True, the plotting function may "request" any of the
                 following arguments by accepting them or if `pass_{arg}` was found in the settings dict:
 
-                * Each of `vectorbt.utils.attr.AttrResolver.self_aliases`: original object
+                * Each of `vectorbt.utils.attr_.AttrResolver.self_aliases`: original object
                     (ungrouped, with no column selected)
                 * `group_by`: won't be passed if it was used in resolving the first attribute of `plot_func`
                     specified as a path, use `pass_group_by=True` to pass anyway
@@ -134,7 +134,7 @@ class PlotsBuilderMixin(metaclass=MetaPlotsBuilderMixin):
                 * `silence_warnings`
                 * Any argument from `settings`
                 * Any attribute of this object if it meant to be resolved
-                    (see `vectorbt.utils.attr.AttrResolver.resolve_attr`)
+                    (see `vectorbt.utils.attr_.AttrResolver.resolve_attr`)
 
                 !!! note
                     Layout-related resolution arguments such as `add_trace_kwargs` are unavailable
@@ -169,9 +169,8 @@ class PlotsBuilderMixin(metaclass=MetaPlotsBuilderMixin):
 
             See further notes under `vectorbt.generic.stats_builder.StatsBuilderMixin`.
 
-        ## Example
-
-        See `vectorbt.portfolio.base` for examples.
+        Usage:
+            See `vectorbt.portfolio.base` for examples.
         """
         from vectorbt._settings import settings as _settings
         plotting_cfg = _settings['plotting']

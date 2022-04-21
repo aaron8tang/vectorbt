@@ -9,7 +9,7 @@ These only accept NumPy arrays and other Numba-compatible types.
 
 The module can be accessed directly via `vbt.nb`.
 
-```python-repl
+```pycon
 >>> import numpy as np
 >>> import vectorbt as vbt
 
@@ -29,9 +29,9 @@ array([nan, 1.5, 2.5, 3.5])
 
 import numpy as np
 from numba import njit, generated_jit
+from numba.core.types import Omitted
 from numba.np.numpy_support import as_dtype
 from numba.typed import Dict
-from numba.core.types import Omitted
 
 from vectorbt import _typing as tp
 from vectorbt.generic.enums import RangeStatus, DrawdownStatus, range_dt, drawdown_dt
@@ -349,7 +349,6 @@ def bfill_nb(a: tp.Array2d) -> tp.Array2d:
     for col in range(a.shape[1]):
         out[:, col] = bfill_1d_nb(a[:, col])
     return out
-
 
 
 @njit(cache=True)
@@ -1443,33 +1442,33 @@ def any_squeeze_nb(col: int, group: int, a: tp.Array1d) -> bool:
 def find_ranges_nb(ts: tp.Array2d, gap_value: tp.Scalar) -> tp.RecordArray:
     """Find ranges and store their information as records to an array.
 
-    ## Example
+    Usage:
+        * Find ranges in time series:
 
-    Find ranges in time series:
-    ```python-repl
-    >>> import numpy as np
-    >>> import pandas as pd
-    >>> from vectorbt.generic.nb import find_ranges_nb
+        ```pycon
+        >>> import numpy as np
+        >>> import pandas as pd
+        >>> from vectorbt.generic.nb import find_ranges_nb
 
-    >>> ts = np.asarray([
-    ...     [np.nan, np.nan, np.nan, np.nan],
-    ...     [     2, np.nan, np.nan, np.nan],
-    ...     [     3,      3, np.nan, np.nan],
-    ...     [np.nan,      4,      4, np.nan],
-    ...     [     5, np.nan,      5,      5],
-    ...     [     6,      6, np.nan,      6]
-    ... ])
-    >>> records = find_ranges_nb(ts, np.nan)
+        >>> ts = np.asarray([
+        ...     [np.nan, np.nan, np.nan, np.nan],
+        ...     [     2, np.nan, np.nan, np.nan],
+        ...     [     3,      3, np.nan, np.nan],
+        ...     [np.nan,      4,      4, np.nan],
+        ...     [     5, np.nan,      5,      5],
+        ...     [     6,      6, np.nan,      6]
+        ... ])
+        >>> records = find_ranges_nb(ts, np.nan)
 
-    >>> pd.DataFrame.from_records(records)
-       id  col  start_idx  end_idx
-    0   0    0          1        3
-    1   1    0          4        6
-    2   2    1          2        4
-    3   3    1          5        6
-    4   4    2          3        5
-    5   5    3          4        6
-    ```
+        >>> pd.DataFrame.from_records(records)
+           id  col  start_idx  end_idx
+        0   0    0          1        3
+        1   1    0          4        6
+        2   2    1          2        4
+        3   3    1          5        6
+        4   4    2          3        5
+        5   5    3          4        6
+        ```
     """
     out = np.empty(ts.shape[0] * ts.shape[1], dtype=range_dt)
     ridx = 0
@@ -1608,33 +1607,32 @@ def ranges_to_mask_nb(start_idx_arr: tp.Array1d,
 def get_drawdowns_nb(ts: tp.Array2d) -> tp.RecordArray:
     """Fill drawdown records by analyzing a time series.
 
-    ## Example
+    Usage:
+        ```pycon
+        >>> import numpy as np
+        >>> import pandas as pd
+        >>> from vectorbt.generic.nb import get_drawdowns_nb
 
-    ```python-repl
-    >>> import numpy as np
-    >>> import pandas as pd
-    >>> from vectorbt.generic.nb import get_drawdowns_nb
+        >>> ts = np.asarray([
+        ...     [1, 5, 1, 3],
+        ...     [2, 4, 2, 2],
+        ...     [3, 3, 3, 1],
+        ...     [4, 2, 2, 2],
+        ...     [5, 1, 1, 3]
+        ... ])
+        >>> records = get_drawdowns_nb(ts)
 
-    >>> ts = np.asarray([
-    ...     [1, 5, 1, 3],
-    ...     [2, 4, 2, 2],
-    ...     [3, 3, 3, 1],
-    ...     [4, 2, 2, 2],
-    ...     [5, 1, 1, 3]
-    ... ])
-    >>> records = get_drawdowns_nb(ts)
+        >>> pd.DataFrame.from_records(records)
+           id  col  peak_idx  start_idx  valley_idx  end_idx  peak_val  valley_val  \\
+        0   0    1         0          1           4        4       5.0         1.0
+        1   1    2         2          3           4        4       3.0         1.0
+        2   2    3         0          1           2        4       3.0         1.0
 
-    >>> pd.DataFrame.from_records(records)
-       id  col  peak_idx  start_idx  valley_idx  end_idx  peak_val  valley_val  \\
-    0   0    1         0          1           4        4       5.0         1.0
-    1   1    2         2          3           4        4       3.0         1.0
-    2   2    3         0          1           2        4       3.0         1.0
-
-       end_val  status
-    0      1.0       0
-    1      1.0       0
-    2      3.0       1
-    ```
+           end_val  status
+        0      1.0       0
+        1      1.0       0
+        2      3.0       1
+        ```
     """
     out = np.empty(ts.shape[0] * ts.shape[1], dtype=drawdown_dt)
     ddidx = 0
@@ -1741,3 +1739,42 @@ def dd_recovery_duration_ratio_nb(start_idx_arr: tp.Array1d,
 def dd_recovery_return_nb(valley_val_arr: tp.Array1d, end_val_arr: tp.Array1d) -> tp.Array1d:
     """Return the recovery return of each drawdown record."""
     return (end_val_arr - valley_val_arr) / valley_val_arr
+
+
+# ############# Crossover ############# #
+
+@njit(cache=True)
+def crossed_above_1d_nb(arr1: tp.Array1d, arr2: tp.Array1d, wait: int = 0) -> tp.Array1d:
+    """Get the crossover of the first array going above the second array."""
+    out = np.empty(arr1.shape, dtype=np.bool_)
+    was_below = False
+    crossed_ago = -1
+
+    for i in range(arr1.shape[0]):
+        if np.isnan(arr1[i]) or np.isnan(arr2[i]):
+            crossed_ago = -1
+            was_below = False
+            out[i] = False
+        elif arr1[i] > arr2[i]:
+            if was_below:
+                crossed_ago += 1
+                out[i] = crossed_ago == wait
+            else:
+                out[i] = False
+        elif arr1[i] == arr2[i]:
+            crossed_ago = -1
+            out[i] = False
+        else:
+            crossed_ago = -1
+            was_below = True
+            out[i] = False
+    return out
+
+
+@njit(cache=True)
+def crossed_above_nb(arr1: tp.Array2d, arr2: tp.Array2d, wait: int = 0) -> tp.Array2d:
+    """2-dim version of `crossed_above_1d_nb`."""
+    out = np.empty(arr1.shape, dtype=np.bool_)
+    for col in range(arr1.shape[1]):
+        out[:, col] = crossed_above_1d_nb(arr1[:, col], arr2[:, col], wait=wait)
+    return out

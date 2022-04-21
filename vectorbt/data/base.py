@@ -15,7 +15,7 @@ under the hood is iterating over all symbols and calling this method.
 Let's create a simple data class `RandomData` that generates price based on
 random returns with provided mean and standard deviation:
 
-```python-repl
+```pycon
 >>> import numpy as np
 >>> import pandas as pd
 >>> import vectorbt as vbt
@@ -46,7 +46,7 @@ symbol         RANDNX1     RANDNX2
 
 To provide different keyword arguments for different symbols, we can use `symbol_dict`:
 
-```python-repl
+```pycon
 >>> start_value = vbt.symbol_dict({'RANDNX2': 200})
 >>> rand_data = RandomData.download(['RANDNX1', 'RANDNX2'], start_value=start_value)
 >>> rand_data.get()
@@ -66,7 +66,7 @@ symbol         RANDNX1     RANDNX2
 In case two symbols have different index or columns, they are automatically aligned based on
 `missing_index` and `missing_columns` respectively (see `data` in `vectorbt._settings.settings`):
 
-```python-repl
+```pycon
 >>> start_dt = vbt.symbol_dict({'RANDNX2': '2021-01-03'})
 >>> end_dt = vbt.symbol_dict({'RANDNX2': '2021-01-07'})
 >>> rand_data = RandomData.download(
@@ -98,7 +98,7 @@ to the update method, using `vectorbt.utils.config.merge_dicts`.
 Let's define an update method that updates the latest data point and adds two news data points.
 Note that updating data always returns a new `Data` instance.
 
-```python-repl
+```pycon
 >>> from datetime import timedelta
 >>> from vectorbt.utils.config import merge_dicts
 
@@ -158,7 +158,7 @@ You can merge symbols from different `Data` instances either by subclassing `Dat
 defining custom download and update methods, or by manually merging their data dicts
 into one data dict and passing it to the `Data.from_data` class method.
 
-```python-repl
+```pycon
 >>> rand_data1 = RandomData.download('RANDNX1', mean=0.2)
 >>> rand_data2 = RandomData.download('RANDNX2', start_value=200, start_dt='2021-01-05')
 >>> merged_data = vbt.Data.from_data(vbt.merge_dicts(rand_data1.data, rand_data2.data))
@@ -181,7 +181,7 @@ symbol         RANDNX1     RANDNX2
 Like any other class subclassing `vectorbt.base.array_wrapper.Wrapping`, we can do pandas indexing
 on a `Data` instance, which forwards indexing operation to each Series/DataFrame:
 
-```python-repl
+```pycon
 >>> rand_data.loc['2021-01-07':'2021-01-09']
 <__main__.RandomData at 0x7fdba4e36198>
 
@@ -197,7 +197,7 @@ symbol         RANDNX1     RANDNX2
 Like any other class subclassing `vectorbt.utils.config.Pickleable`, we can save a `Data`
 instance to the disk with `Data.save` and load it with `Data.load`:
 
-```python-repl
+```pycon
 >>> rand_data.save('rand_data')
 >>> rand_data = RandomData.load('rand_data')
 >>> rand_data.get()
@@ -218,7 +218,7 @@ symbol         RANDNX1     RANDNX2
 !!! hint
     See `vectorbt.generic.stats_builder.StatsBuilderMixin.stats` and `Data.metrics`.
 
-```python-repl
+```pycon
 >>> rand_data = RandomData.download(['RANDNX1', 'RANDNX2'])
 
 >>> rand_data.stats(column='a')
@@ -233,7 +233,7 @@ dtype: object
 
 `Data.stats` also supports (re-)grouping:
 
-```python-repl
+```pycon
 >>> rand_data.stats(group_by=True)
 Start                   2021-01-01 00:00:00+00:00
 End                     2021-01-10 00:00:00+00:00
@@ -251,26 +251,27 @@ Name: group, dtype: object
 
 `Data` class has a single subplot based on `Data.plot`:
 
-```python-repl
+```pycon
 >>> rand_data.plots(settings=dict(base=100)).show_svg()
 ```
 
-![](/docs/img/data_plots.svg)
+![](/assets/images/data_plots.svg)
 """
+
+import warnings
 
 import numpy as np
 import pandas as pd
-import warnings
 
 from vectorbt import _typing as tp
-from vectorbt.utils import checks
-from vectorbt.utils.decorators import cached_method
-from vectorbt.utils.datetime_ import is_tz_aware, to_timezone
-from vectorbt.utils.config import merge_dicts, Config
 from vectorbt.base.array_wrapper import ArrayWrapper, Wrapping
-from vectorbt.generic.stats_builder import StatsBuilderMixin
-from vectorbt.generic.plots_builder import PlotsBuilderMixin
 from vectorbt.generic import plotting
+from vectorbt.generic.plots_builder import PlotsBuilderMixin
+from vectorbt.generic.stats_builder import StatsBuilderMixin
+from vectorbt.utils import checks
+from vectorbt.utils.config import merge_dicts, Config
+from vectorbt.utils.datetime_ import is_tz_aware, to_timezone
+from vectorbt.utils.decorators import cached_method
 
 __pdoc__ = {}
 
@@ -477,10 +478,10 @@ class Data(Wrapping, StatsBuilderMixin, PlotsBuilderMixin, metaclass=MetaData):
             data (dict): Dictionary of array-like objects keyed by symbol.
             tz_localize (timezone_like): If the index is tz-naive, convert to a timezone.
 
-                See `vectorbt.utils.datetime.to_timezone`.
+                See `vectorbt.utils.datetime_.to_timezone`.
             tz_convert (timezone_like): Convert the index from one timezone to another.
 
-                See `vectorbt.utils.datetime.to_timezone`.
+                See `vectorbt.utils.datetime_.to_timezone`.
             missing_index (str): See `Data.align_index`.
             missing_columns (str): See `Data.align_columns`.
             wrapper_kwargs (dict): Keyword arguments passed to `vectorbt.base.array_wrapper.ArrayWrapper`.
@@ -790,19 +791,19 @@ class Data(Wrapping, StatsBuilderMixin, PlotsBuilderMixin, metaclass=MetaData):
                     The column should contain prices.
             kwargs (dict): Keyword arguments passed to `vectorbt.generic.accessors.GenericAccessor.plot`.
 
-        ## Example
+        Usage:
+            ```pycon
+            >>> import vectorbt as vbt
 
-        ```python-repl
-        >>> import vectorbt as vbt
+            >>> start = '2021-01-01 UTC'  # crypto is in UTC
+            >>> end = '2021-06-01 UTC'
+            >>> data = vbt.YFData.download(['BTC-USD', 'ETH-USD', 'ADA-USD'], start=start, end=end)
 
-        >>> start = '2021-01-01 UTC'  # crypto is in UTC
-        >>> end = '2021-06-01 UTC'
-        >>> data = vbt.YFData.download(['BTC-USD', 'ETH-USD', 'ADA-USD'], start=start, end=end)
+            >>> data.plot(column='Close', base=1)
+            ```
 
-        >>> data.plot(column='Close', base=1)
-        ```
-
-        ![](/docs/img/data_plot.svg)"""
+            ![](/assets/images/data_plot.svg)
+        """
         self_col = self.select_one(column=column, group_by=False)
         data = self_col.get()
         if base is not None:

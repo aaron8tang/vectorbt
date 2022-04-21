@@ -6,7 +6,7 @@
 Order records capture information on simulation logs. Logs are populated when
 simulating a portfolio and can be accessed as `vectorbt.portfolio.base.Portfolio.logs`.
 
-```python-repl
+```pycon
 >>> import pandas as pd
 >>> import numpy as np
 >>> from datetime import datetime, timedelta
@@ -45,7 +45,7 @@ Name: count, dtype: int64
 !!! hint
     See `vectorbt.generic.stats_builder.StatsBuilderMixin.stats` and `Logs.metrics`.
 
-```python-repl
+```pycon
 >>> logs['a'].stats()
 Start                             2020-01-01 00:00:00
 End                               2020-04-09 00:00:00
@@ -62,7 +62,7 @@ Name: a, dtype: object
 
 `Logs.stats` also supports (re-)grouping:
 
-```python-repl
+```pycon
 >>> logs.stats(group_by=True)
 Start                             2020-01-01 00:00:00
 End                               2020-04-09 00:00:00
@@ -88,10 +88,7 @@ This class does not have any subplots.
 import pandas as pd
 
 from vectorbt import _typing as tp
-from vectorbt.utils.config import merge_dicts, Config
 from vectorbt.base.reshape_fns import to_dict
-from vectorbt.records.base import Records
-from vectorbt.records.decorators import attach_fields, override_field_config
 from vectorbt.portfolio.enums import (
     log_dt,
     SizeType,
@@ -100,6 +97,9 @@ from vectorbt.portfolio.enums import (
     OrderStatus,
     OrderStatusInfo
 )
+from vectorbt.records.base import Records
+from vectorbt.records.decorators import attach_fields, override_field_config
+from vectorbt.utils.config import merge_dicts, Config
 
 __pdoc__ = {}
 
@@ -159,6 +159,9 @@ logs_field_config = Config(
             ),
             req_max_size=dict(
                 title='Request Max Size'
+            ),
+            req_size_granularity=dict(
+                title='Request Size Granularity'
             ),
             req_reject_prob=dict(
                 title='Request Rejection Prob'

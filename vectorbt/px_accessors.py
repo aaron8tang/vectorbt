@@ -6,18 +6,19 @@
 !!! note
     Accessors do not utilize caching."""
 
-import pandas as pd
 from inspect import getmembers, isfunction
+
+import pandas as pd
 import plotly.express as px
 
 from vectorbt import _typing as tp
-from vectorbt.root_accessors import register_dataframe_vbt_accessor, register_series_vbt_accessor
-from vectorbt.utils import checks
-from vectorbt.utils.figure import make_figure
-from vectorbt.utils.config import merge_dicts
 from vectorbt.base.accessors import BaseAccessor, BaseDFAccessor, BaseSRAccessor
 from vectorbt.base.reshape_fns import to_2d_array
 from vectorbt.generic.plotting import clean_labels
+from vectorbt.root_accessors import register_dataframe_vbt_accessor, register_series_vbt_accessor
+from vectorbt.utils import checks
+from vectorbt.utils.config import merge_dicts
+from vectorbt.utils.figure import make_figure
 
 
 def attach_px_methods(cls: tp.Type[tp.T]) -> tp.Type[tp.T]:
@@ -71,18 +72,17 @@ class PXAccessor(BaseAccessor):
 
     Accessible through `pd.Series.vbt.px` and `pd.DataFrame.vbt.px`.
 
-    ## Example
+    Usage:
+        ```pycon
+        >>> import pandas as pd
+        >>> import vectorbt as vbt
 
-    ```python-repl
-    >>> import pandas as pd
-    >>> import vectorbt as vbt
+        >>> vbt.settings.set_theme('seaborn')
 
-    >>> vbt.settings.set_theme('seaborn')
+        >>> pd.Series([1, 2, 3]).vbt.px.bar()
+        ```
 
-    >>> pd.Series([1, 2, 3]).vbt.px.bar()
-    ```
-
-    ![](/docs/img/px_bar.svg)
+        ![](/assets/images/px_bar.svg)
     """
 
     def __init__(self, obj: tp.SeriesFrame, **kwargs) -> None:

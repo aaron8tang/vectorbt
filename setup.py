@@ -38,28 +38,25 @@ setup(
         'requests',
         'pytz',
         'typing_extensions; python_version < "3.8"',
-        'mypy_extensions',
-        'kaleido'
+        'mypy_extensions'
     ],
     extras_require={
         'full': [
             'yfinance>=0.1.63',
             'python-binance',
             'ccxt',
+            'alpaca-trade-api==1.4.3',
             'ray>=1.4.1',
             'ta',
             'pandas_ta',
             'TA-Lib',
             'python-telegram-bot>=13.4',  # LGPLv3
-            'quantstats'
+            'quantstats>=0.0.37'
         ],
         'cov': [
             'pytest',
             'pytest-cov',
             'codecov'
-        ],
-        'docs': [
-            'pdoc3'  # AGPL-3.0
         ]
     },
     python_requires='>=3.6, <3.10',

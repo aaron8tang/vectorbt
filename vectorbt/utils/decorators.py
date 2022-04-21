@@ -3,9 +3,10 @@
 
 """Class and function decorators."""
 
+import inspect
 from functools import wraps, lru_cache
 from threading import RLock
-import inspect
+
 import numpy as np
 
 from vectorbt import _typing as tp
@@ -60,7 +61,7 @@ class custom_property:
     """Custom property that stores function and flags as attributes.
 
     Can be called both as
-    ```python-repl
+    ```pycon
     >>> @custom_property
     ... def user_function(self): pass
     ```
@@ -148,44 +149,43 @@ def should_cache(func_name: str, instance: object, func: tp.Optional[tp.Callable
     and finds the one with the lowest (best) rank. If the search yields the same rank for both lists,
     global caching flag `enabled` decides.
 
-    ## Example
+    Usage:
+        * Let's evaluate various caching conditions:
 
-    Let's evaluate various caching conditions:
+        ```pycon
+        >>> import vectorbt as vbt
 
-    ```python-repl
-    >>> import vectorbt as vbt
+        >>> class A:
+        ...     @cached_property(my_flag=True)
+        ...     def f(self):
+        ...         return None
 
-    >>> class A:
-    ...     @cached_property(my_flag=True)
-    ...     def f(self):
-    ...         return None
+        >>> class B(A):
+        ...     @cached_property(my_flag=False)
+        ...     def f(self):
+        ...         return None
 
-    >>> class B(A):
-    ...     @cached_property(my_flag=False)
-    ...     def f(self):
-    ...         return None
+        >>> a = A()
+        >>> b = B()
 
-    >>> a = A()
-    >>> b = B()
-
-    >>> vbt.CacheCondition(instance=a, func='f')  # A.f
-    >>> vbt.CacheCondition(instance=b, func='f')  # B.f
-    >>> vbt.CacheCondition(instance=a, flags=dict(my_flag=True))  # A.f
-    >>> vbt.CacheCondition(instance=a, flags=dict(my_flag=False))  # none
-    >>> vbt.CacheCondition(instance=b, flags=dict(my_flag=False))  # B.f
-    >>> vbt.CacheCondition(instance=a)  # A.f
-    >>> vbt.CacheCondition(instance=b)  # B.f
-    >>> vbt.CacheCondition(cls=A)  # A.f
-    >>> vbt.CacheCondition(cls=B)  # B.f
-    >>> vbt.CacheCondition(base_cls=A)  # A.f and B.f
-    >>> vbt.CacheCondition(base_cls=B)  # B.f
-    >>> vbt.CacheCondition(base_cls=A, flags=dict(my_flag=False))  # B.f
-    >>> vbt.CacheCondition(func=A.f)  # A.f
-    >>> vbt.CacheCondition(func=B.f)  # B.f
-    >>> vbt.CacheCondition(func='f')  # A.f and B.f
-    >>> vbt.CacheCondition(func='f', flags=dict(my_flag=False))  # B.f
-    >>> vbt.CacheCondition(flags=dict(my_flag=True))  # A.f
-    ```
+        >>> vbt.CacheCondition(instance=a, func='f')  # A.f
+        >>> vbt.CacheCondition(instance=b, func='f')  # B.f
+        >>> vbt.CacheCondition(instance=a, flags=dict(my_flag=True))  # A.f
+        >>> vbt.CacheCondition(instance=a, flags=dict(my_flag=False))  # none
+        >>> vbt.CacheCondition(instance=b, flags=dict(my_flag=False))  # B.f
+        >>> vbt.CacheCondition(instance=a)  # A.f
+        >>> vbt.CacheCondition(instance=b)  # B.f
+        >>> vbt.CacheCondition(cls=A)  # A.f
+        >>> vbt.CacheCondition(cls=B)  # B.f
+        >>> vbt.CacheCondition(base_cls=A)  # A.f and B.f
+        >>> vbt.CacheCondition(base_cls=B)  # B.f
+        >>> vbt.CacheCondition(base_cls=A, flags=dict(my_flag=False))  # B.f
+        >>> vbt.CacheCondition(func=A.f)  # A.f
+        >>> vbt.CacheCondition(func=B.f)  # B.f
+        >>> vbt.CacheCondition(func='f')  # A.f and B.f
+        >>> vbt.CacheCondition(func='f', flags=dict(my_flag=False))  # B.f
+        >>> vbt.CacheCondition(flags=dict(my_flag=True))  # A.f
+        ```
     """
     from vectorbt._settings import settings
     caching_cfg = settings['caching']
@@ -354,12 +354,12 @@ def custom_method(*args, **flags) -> tp.Union[tp.Callable, custom_methodT]:
     """Custom extensible method that stores function and flags as attributes.
 
     Can be called both as
-    ```python-repl
+    ```pycon
     >>> @cached_method
     ... def user_function(): pass
     ```
     and
-    ```python-repl
+    ```pycon
     >>> @cached_method(maxsize=128, typed=False, a=0, b=0)  # flags
     ... def user_function(): pass
     ```
@@ -518,7 +518,7 @@ BinaryTranslateFuncT = tp.Callable[[tp.Any, tp.Any, tp.Callable], tp.Any]
 
 
 def attach_binary_magic_methods(translate_func: BinaryTranslateFuncT,
-                             config: tp.Optional[Config] = None) -> WrapperFuncT:
+                                config: tp.Optional[Config] = None) -> WrapperFuncT:
     """Class decorator to add binary magic methods to a class.
 
     `translate_func` should
@@ -576,7 +576,7 @@ UnaryTranslateFuncT = tp.Callable[[tp.Any, tp.Callable], tp.Any]
 
 
 def attach_unary_magic_methods(translate_func: UnaryTranslateFuncT,
-                            config: tp.Optional[Config] = None) -> WrapperFuncT:
+                               config: tp.Optional[Config] = None) -> WrapperFuncT:
     """Class decorator to add unary magic methods to a class.
 
     `translate_func` should

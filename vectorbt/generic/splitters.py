@@ -5,14 +5,15 @@
 
 Defines splitter classes similar (but may not compatible) to `sklearn.model_selection.BaseCrossValidator`."""
 
-import numpy as np
-import pandas as pd
 import math
 
+import numpy as np
+import pandas as pd
+
 from vectorbt import _typing as tp
-from vectorbt.utils import checks
 from vectorbt.base.index_fns import find_first_occurrence
 from vectorbt.base.reshape_fns import to_any_array
+from vectorbt.utils import checks
 
 RangesT = tp.Generator[tp.Sequence[tp.ArrayLikeSequence], None, None]
 
@@ -39,13 +40,12 @@ def split_ranges_into_sets(start_idxs: tp.ArrayLike,
 
             Can be passed per range.
 
-    ## Example
-
-    * `set_lens=(0.5)`: 50% in training set, the rest in test set
-    * `set_lens=(0.5, 0.25)`: 50% in training set, 25% in validation set, the rest in test set
-    * `set_lens=(50, 30)`: 50 in training set, 30 in validation set, the rest in test set
-    * `set_lens=(50, 30)` and `left_to_right=False`: 30 in test set, 50 in validation set,
-        the rest in training set
+    Usage:
+        * `set_lens=(0.5)`: 50% in training set, the rest in test set
+        * `set_lens=(0.5, 0.25)`: 50% in training set, 25% in validation set, the rest in test set
+        * `set_lens=(50, 30)`: 50 in training set, 30 in validation set, the rest in test set
+        * `set_lens=(50, 30)` and `left_to_right=False`: 30 in test set, 50 in validation set,
+            the rest in training set
     """
     start_idxs = np.asarray(start_idxs)
     end_idxs = np.asarray(end_idxs)

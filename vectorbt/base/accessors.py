@@ -10,7 +10,7 @@ Methods can be accessed as follows:
 
 For example:
 
-```python-repl
+```pycon
 >>> import pandas as pd
 >>> import vectorbt as vbt
 
@@ -27,7 +27,7 @@ of combine/reshape/index functions that can work with pandas objects. For exampl
 `vectorbt.base.reshape_fns.broadcast` can take an arbitrary number of pandas objects, thus
 you can find its variations as accessor methods.
 
-```python-repl
+```pycon
 >>> sr = pd.Series([1])
 >>> df = pd.DataFrame([1, 2, 3])
 
@@ -47,7 +47,7 @@ Additionally, `BaseAccessor` implements arithmetic (such as `+`), comparison (su
 logical operators (such as `&`) by doing 1) NumPy-like broadcasting and 2) the compuation with NumPy
 under the hood, which is mostly much faster than with pandas.
 
-```python-repl
+```pycon
 >>> df = pd.DataFrame(np.random.uniform(size=(1000, 1000)))
 
 >>> %timeit df * 2  # pandas
@@ -67,17 +67,18 @@ import numpy as np
 import pandas as pd
 
 from vectorbt import _typing as tp
-from vectorbt.utils import checks
-from vectorbt.utils.decorators import class_or_instancemethod, attach_binary_magic_methods, attach_unary_magic_methods
-from vectorbt.utils.config import merge_dicts, get_func_arg_names
 from vectorbt.base import combine_fns, index_fns, reshape_fns
-from vectorbt.base.column_grouper import ColumnGrouper
 from vectorbt.base.array_wrapper import ArrayWrapper, Wrapping
+from vectorbt.base.column_grouper import ColumnGrouper
+from vectorbt.utils import checks
+from vectorbt.utils.config import merge_dicts, get_func_arg_names
+from vectorbt.utils.decorators import class_or_instancemethod, attach_binary_magic_methods, attach_unary_magic_methods
 
 BaseAccessorT = tp.TypeVar("BaseAccessorT", bound="BaseAccessor")
 
 
-@attach_binary_magic_methods(lambda self, other, np_func: self.combine(other, allow_multiple=False, combine_func=np_func))
+@attach_binary_magic_methods(
+    lambda self, other, np_func: self.combine(other, allow_multiple=False, combine_func=np_func))
 @attach_unary_magic_methods(lambda self, np_func: self.apply(apply_func=np_func))
 class BaseAccessor(Wrapping):
     """Accessor on top of Series and DataFrames.
@@ -318,32 +319,31 @@ class BaseAccessor(Wrapping):
     def align_to(self, other: tp.SeriesFrame, wrap_kwargs: tp.KwargsLike = None) -> tp.SeriesFrame:
         """Align to `other` on their axes.
 
-        ## Example
+        Usage:
+            ```pycon
+            >>> import vectorbt as vbt
+            >>> import pandas as pd
 
-        ```python-repl
-        >>> import vectorbt as vbt
-        >>> import pandas as pd
+            >>> df1 = pd.DataFrame([[1, 2], [3, 4]], index=['x', 'y'], columns=['a', 'b'])
+            >>> df1
+               a  b
+            x  1  2
+            y  3  4
 
-        >>> df1 = pd.DataFrame([[1, 2], [3, 4]], index=['x', 'y'], columns=['a', 'b'])
-        >>> df1
-           a  b
-        x  1  2
-        y  3  4
+            >>> df2 = pd.DataFrame([[5, 6, 7, 8], [9, 10, 11, 12]], index=['x', 'y'],
+            ...     columns=pd.MultiIndex.from_arrays([[1, 1, 2, 2], ['a', 'b', 'a', 'b']]))
+            >>> df2
+                   1       2
+               a   b   a   b
+            x  5   6   7   8
+            y  9  10  11  12
 
-        >>> df2 = pd.DataFrame([[5, 6, 7, 8], [9, 10, 11, 12]], index=['x', 'y'],
-        ...     columns=pd.MultiIndex.from_arrays([[1, 1, 2, 2], ['a', 'b', 'a', 'b']]))
-        >>> df2
-               1       2
-           a   b   a   b
-        x  5   6   7   8
-        y  9  10  11  12
-
-        >>> df1.vbt.align_to(df2)
-              1     2
-           a  b  a  b
-        x  1  2  1  2
-        y  3  4  3  4
-        ```
+            >>> df1.vbt.align_to(df2)
+                  1     2
+               a  b  a  b
+            x  1  2  1  2
+            y  3  4  3  4
+            ```
         """
         checks.assert_instance_of(other, (pd.Series, pd.DataFrame))
         obj = reshape_fns.to_2d(self.obj)
@@ -405,20 +405,19 @@ class BaseAccessor(Wrapping):
         !!! note
             The resulted array must have the same shape as the original array.
 
-        ## Example
+        Usage:
+            ```pycon
+            >>> import vectorbt as vbt
+            >>> import pandas as pd
 
-        ```python-repl
-        >>> import vectorbt as vbt
-        >>> import pandas as pd
-
-        >>> sr = pd.Series([1, 2], index=['x', 'y'])
-        >>> sr2.vbt.apply(apply_func=lambda x: x ** 2)
-        i2
-        x2    1
-        y2    4
-        z2    9
-        Name: a2, dtype: int64
-        ```
+            >>> sr = pd.Series([1, 2], index=['x', 'y'])
+            >>> sr2.vbt.apply(apply_func=lambda x: x ** 2)
+            i2
+            x2    1
+            y2    4
+            z2    9
+            Name: a2, dtype: int64
+            ```
         """
         checks.assert_not_none(apply_func)
         # Optionally cast to 2d array
@@ -442,20 +441,19 @@ class BaseAccessor(Wrapping):
             broadcast_kwargs (dict): Keyword arguments passed to `vectorbt.base.reshape_fns.broadcast`.
             keys (index_like): Outermost column level.
 
-        ## Example
+        Usage:
+            ```pycon
+            >>> import vectorbt as vbt
+            >>> import pandas as pd
 
-        ```python-repl
-        >>> import vectorbt as vbt
-        >>> import pandas as pd
-
-        >>> sr = pd.Series([1, 2], index=['x', 'y'])
-        >>> df = pd.DataFrame([[3, 4], [5, 6]], index=['x', 'y'], columns=['a', 'b'])
-        >>> sr.vbt.concat(df, keys=['c', 'd'])
-              c     d
-           a  b  a  b
-        x  1  1  3  4
-        y  2  2  5  6
-        ```
+            >>> sr = pd.Series([1, 2], index=['x', 'y'])
+            >>> df = pd.DataFrame([[3, 4], [5, 6]], index=['x', 'y'], columns=['a', 'b'])
+            >>> sr.vbt.concat(df, keys=['c', 'd'])
+                  c     d
+               a  b  a  b
+            x  1  1  3  4
+            y  2  2  5  6
+            ```
         """
         others = tuple(map(lambda x: x.obj if isinstance(x, BaseAccessor) else x, others))
         if isinstance(cls_or_self, type):
@@ -501,36 +499,35 @@ class BaseAccessor(Wrapping):
         !!! note
             The resulted arrays to be concatenated must have the same shape as broadcast input arrays.
 
-        ## Example
+        Usage:
+            ```pycon
+            >>> import vectorbt as vbt
+            >>> import pandas as pd
 
-        ```python-repl
-        >>> import vectorbt as vbt
-        >>> import pandas as pd
+            >>> df = pd.DataFrame([[3, 4], [5, 6]], index=['x', 'y'], columns=['a', 'b'])
+            >>> df.vbt.apply_and_concat(3, [1, 2, 3],
+            ...     apply_func=lambda i, a, b: a * b[i], keys=['c', 'd', 'e'])
+                  c       d       e
+               a  b   a   b   a   b
+            x  3  4   6   8   9  12
+            y  5  6  10  12  15  18
+            ```
 
-        >>> df = pd.DataFrame([[3, 4], [5, 6]], index=['x', 'y'], columns=['a', 'b'])
-        >>> df.vbt.apply_and_concat(3, [1, 2, 3],
-        ...     apply_func=lambda i, a, b: a * b[i], keys=['c', 'd', 'e'])
-              c       d       e
-           a  b   a   b   a   b
-        x  3  4   6   8   9  12
-        y  5  6  10  12  15  18
-        ```
+            * Use Ray for small inputs and large processing times:
 
-        Use Ray for small inputs and large processing times:
+            ```pycon
+            >>> def apply_func(i, a):
+            ...     time.sleep(1)
+            ...     return a
 
-        ```python-repl
-        >>> def apply_func(i, a):
-        ...     time.sleep(1)
-        ...     return a
+            >>> sr = pd.Series([1, 2, 3])
 
-        >>> sr = pd.Series([1, 2, 3])
+            >>> %timeit sr.vbt.apply_and_concat(3, apply_func=apply_func)
+            3.01 s ± 2.15 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
 
-        >>> %timeit sr.vbt.apply_and_concat(3, apply_func=apply_func)
-        3.01 s ± 2.15 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
-
-        >>> %timeit sr.vbt.apply_and_concat(3, apply_func=apply_func, use_ray=True)
-        1.01 s ± 2.31 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
-        ```
+            >>> %timeit sr.vbt.apply_and_concat(3, apply_func=apply_func, use_ray=True)
+            1.01 s ± 2.31 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+            ```
         """
         checks.assert_not_none(apply_func)
         # Optionally cast to 2d array
@@ -600,47 +597,46 @@ class BaseAccessor(Wrapping):
 
             Also remember to bring each in `*args` to a Numba-compatible format.
 
-        ## Example
+        Usage:
+            ```pycon
+            >>> import vectorbt as vbt
+            >>> import pandas as pd
 
-        ```python-repl
-        >>> import vectorbt as vbt
-        >>> import pandas as pd
+            >>> sr = pd.Series([1, 2], index=['x', 'y'])
+            >>> df = pd.DataFrame([[3, 4], [5, 6]], index=['x', 'y'], columns=['a', 'b'])
 
-        >>> sr = pd.Series([1, 2], index=['x', 'y'])
-        >>> df = pd.DataFrame([[3, 4], [5, 6]], index=['x', 'y'], columns=['a', 'b'])
+            >>> sr.vbt.combine(df, combine_func=lambda x, y: x + y)
+               a  b
+            x  4  5
+            y  7  8
 
-        >>> sr.vbt.combine(df, combine_func=lambda x, y: x + y)
-           a  b
-        x  4  5
-        y  7  8
+            >>> sr.vbt.combine([df, df*2], combine_func=lambda x, y: x + y)
+                a   b
+            x  10  13
+            y  17  20
 
-        >>> sr.vbt.combine([df, df*2], combine_func=lambda x, y: x + y)
-            a   b
-        x  10  13
-        y  17  20
+            >>> sr.vbt.combine([df, df*2], combine_func=lambda x, y: x + y, concat=True, keys=['c', 'd'])
+                  c       d
+               a  b   a   b
+            x  4  5   7   9
+            y  7  8  12  14
+            ```
 
-        >>> sr.vbt.combine([df, df*2], combine_func=lambda x, y: x + y, concat=True, keys=['c', 'd'])
-              c       d
-           a  b   a   b
-        x  4  5   7   9
-        y  7  8  12  14
-        ```
+            * Use Ray for small inputs and large processing times:
 
-        Use Ray for small inputs and large processing times:
+            ```pycon
+            >>> def combine_func(a, b):
+            ...     time.sleep(1)
+            ...     return a + b
 
-        ```python-repl
-        >>> def combine_func(a, b):
-        ...     time.sleep(1)
-        ...     return a + b
+            >>> sr = pd.Series([1, 2, 3])
 
-        >>> sr = pd.Series([1, 2, 3])
+            >>> %timeit sr.vbt.combine([1, 1, 1], combine_func=combine_func)
+            3.01 s ± 2.98 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
 
-        >>> %timeit sr.vbt.combine([1, 1, 1], combine_func=combine_func)
-        3.01 s ± 2.98 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
-
-        >>> %timeit sr.vbt.combine([1, 1, 1], combine_func=combine_func, concat=True, use_ray=True)
-        1.02 s ± 2.32 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
-        ```
+            >>> %timeit sr.vbt.combine([1, 1, 1], combine_func=combine_func, concat=True, use_ray=True)
+            1.02 s ± 2.32 ms per loop (mean ± std. dev. of 7 runs, 1 loop each)
+            ```
         """
         if not allow_multiple or not isinstance(other, (tuple, list)):
             others = (other,)

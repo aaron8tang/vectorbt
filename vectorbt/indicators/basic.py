@@ -5,7 +5,7 @@
 
 You can access all the indicators either by `vbt.*` or `vbt.indicators.*`.
 
-```python-repl
+```pycon
 >>> import pandas as pd
 >>> import vectorbt as vbt
 
@@ -24,7 +24,7 @@ have plotting methods.
 
 Run for the examples below:
 
-```python-repl
+```pycon
 >>> import vectorbt as vbt
 >>> from datetime import datetime
 
@@ -57,18 +57,18 @@ Date
 
 >>> ohlcv.vbt.ohlcv.plot()
 ```
-![](/docs/img/basic_price.svg)"""
+![](/assets/images/basic_price.svg)"""
 
 import numpy as np
 import plotly.graph_objects as go
 
 from vectorbt import _typing as tp
+from vectorbt.generic import nb as generic_nb
+from vectorbt.indicators import nb
+from vectorbt.indicators.factory import IndicatorFactory
+from vectorbt.utils.colors import adjust_opacity
 from vectorbt.utils.config import merge_dicts
 from vectorbt.utils.figure import make_figure
-from vectorbt.utils.colors import adjust_opacity
-from vectorbt.generic import nb as generic_nb
-from vectorbt.indicators.factory import IndicatorFactory
-from vectorbt.indicators import nb
 
 # ############# MA ############# #
 
@@ -116,13 +116,12 @@ class _MA(MA):
             fig (Figure or FigureWidget): Figure to add traces to.
             **layout_kwargs: Keyword arguments for layout.
 
-        ## Example
+        Usage:
+            ```pycon
+            >>> vbt.MA.run(ohlcv['Close'], 10).plot()
+            ```
 
-        ```python-repl
-        >>> vbt.MA.run(ohlcv['Close'], 10).plot()
-        ```
-
-        ![](/docs/img/MA.svg)
+            ![](/assets/images/MA.svg)
         """
         from vectorbt._settings import settings
         plotting_cfg = settings['plotting']
@@ -202,13 +201,12 @@ class _MSTD(MSTD):
             fig (Figure or FigureWidget): Figure to add traces to.
             **layout_kwargs: Keyword arguments for layout.
 
-        ## Example
+        Usage:
+            ```pycon
+            >>> vbt.MSTD.run(ohlcv['Close'], 10).plot()
+            ```
 
-        ```python-repl
-        >>> vbt.MSTD.run(ohlcv['Close'], 10).plot()
-        ```
-
-        ![](/docs/img/MSTD.svg)
+            ![](/assets/images/MSTD.svg)
         """
         self_col = self.select_one(column=column)
 
@@ -293,13 +291,12 @@ class _BBANDS(BBANDS):
             fig (Figure or FigureWidget): Figure to add traces to.
             **layout_kwargs: Keyword arguments for layout.
 
-        ## Example
+        Usage:
+            ```pycon
+            >>> vbt.BBANDS.run(ohlcv['Close']).plot()
+            ```
 
-        ```python-repl
-        >>> vbt.BBANDS.run(ohlcv['Close']).plot()
-        ```
-
-        ![](/docs/img/BBANDS.svg)
+            ![](/assets/images/BBANDS.svg)
         """
         from vectorbt._settings import settings
         plotting_cfg = settings['plotting']
@@ -395,7 +392,7 @@ class _RSI(RSI):
              levels: tp.Tuple[float, float] = (30, 70),
              rsi_trace_kwargs: tp.KwargsLike = None,
              add_trace_kwargs: tp.KwargsLike = None,
-             xref: str = 'x', 
+             xref: str = 'x',
              yref: str = 'y',
              fig: tp.Optional[tp.BaseFigure] = None,
              **layout_kwargs) -> tp.BaseFigure:  # pragma: no cover
@@ -411,13 +408,12 @@ class _RSI(RSI):
             fig (Figure or FigureWidget): Figure to add traces to.
             **layout_kwargs: Keyword arguments for layout.
 
-        ## Example
+        Usage:
+            ```pycon
+            >>> vbt.RSI.run(ohlcv['Close']).plot()
+            ```
 
-        ```python-repl
-        >>> vbt.RSI.run(ohlcv['Close']).plot()
-        ```
-
-        ![](/docs/img/RSI.svg)
+            ![](/assets/images/RSI.svg)
         """
         self_col = self.select_one(column=column)
 
@@ -514,13 +510,12 @@ class _STOCH(STOCH):
             fig (Figure or FigureWidget): Figure to add traces to.
             **layout_kwargs: Keyword arguments for layout.
 
-        ## Example
+        Usage:
+            ```pycon
+            >>> vbt.STOCH.run(ohlcv['High'], ohlcv['Low'], ohlcv['Close']).plot()
+            ```
 
-        ```python-repl
-        >>> vbt.STOCH.run(ohlcv['High'], ohlcv['Low'], ohlcv['Close']).plot()
-        ```
-
-        ![](/docs/img/STOCH.svg)
+            ![](/assets/images/STOCH.svg)
         """
         self_col = self.select_one(column=column)
 
@@ -627,13 +622,13 @@ class _MACD(MACD):
             fig (Figure or FigureWidget): Figure to add traces to.
             **layout_kwargs: Keyword arguments for layout.
 
-        ## Example
+        Usage:
+            ```pycon
+            >>> vbt.MACD.run(ohlcv['Close']).plot()
+            ```
 
-        ```python-repl
-        >>> vbt.MACD.run(ohlcv['Close']).plot()
-        ```
-
-        ![](/docs/img/MACD.svg)"""
+            ![](/assets/images/MACD.svg)
+        """
         self_col = self.select_one(column=column)
 
         if fig is None:
@@ -738,13 +733,12 @@ class _ATR(ATR):
             fig (Figure or FigureWidget): Figure to add traces to.
             **layout_kwargs: Keyword arguments for layout.
 
-        ## Example
+        Usage:
+            ```pycon
+            >>> vbt.ATR.run(ohlcv['High'], ohlcv['Low'], ohlcv['Close'], 10).plot()
+            ```
 
-        ```python-repl
-        >>> vbt.ATR.run(ohlcv['High'], ohlcv['Low'], ohlcv['Close'], 10).plot()
-        ```
-
-        ![](/docs/img/ATR.svg)
+            ![](/assets/images/ATR.svg)
         """
         self_col = self.select_one(column=column)
 
@@ -811,13 +805,12 @@ class _OBV(OBV):
             fig (Figure or FigureWidget): Figure to add traces to.
             **layout_kwargs: Keyword arguments for layout.
 
-        ## Example
+        Usage:
+            ```py
+            >>> vbt.OBV.run(ohlcv['Close'], ohlcv['Volume']).plot()
+            ```
 
-        ```py
-        >>> vbt.OBV.run(ohlcv['Close'], ohlcv['Volume']).plot()
-        ```
-
-        ![](/docs/img/OBV.svg)
+            ![](/assets/images/OBV.svg)
         """
         self_col = self.select_one(column=column)
 

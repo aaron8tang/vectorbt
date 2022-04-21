@@ -3,20 +3,21 @@
 
 """Mixin for building statistics out of performance metrics."""
 
-import pandas as pd
-import numpy as np
-from collections import Counter
-import warnings
 import inspect
 import string
+import warnings
+from collections import Counter
+
+import numpy as np
+import pandas as pd
 
 from vectorbt import _typing as tp
-from vectorbt.utils import checks
-from vectorbt.utils.config import Config, merge_dicts, get_func_arg_names
-from vectorbt.utils.template import deep_substitute
-from vectorbt.utils.tags import match_tags
-from vectorbt.utils.attr_ import get_dict_attr
 from vectorbt.base.array_wrapper import Wrapping
+from vectorbt.utils import checks
+from vectorbt.utils.attr_ import get_dict_attr
+from vectorbt.utils.config import Config, merge_dicts, get_func_arg_names
+from vectorbt.utils.tags import match_tags
+from vectorbt.utils.template import deep_substitute
 
 
 class MetaStatsBuilderMixin(type):
@@ -130,7 +131,7 @@ class StatsBuilderMixin(metaclass=MetaStatsBuilderMixin):
                     or a dict of such for multiple sub-metrics.
                 * `resolve_calc_func`: whether to resolve `calc_func`. If the function can be accessed
                     by traversing attributes of this object, you can specify the path to this function
-                    as a string (see `vectorbt.utils.attr.deep_getattr` for the path format).
+                    as a string (see `vectorbt.utils.attr_.deep_getattr` for the path format).
                     If `calc_func` is a function, arguments from merged metric settings are matched with
                     arguments in the signature (see below). If `resolve_calc_func` is False, `calc_func`
                     should accept (resolved) self and dictionary of merged metric settings.
@@ -148,17 +149,17 @@ class StatsBuilderMixin(metaclass=MetaStatsBuilderMixin):
                     If argument to be passed was not found, `pass_{arg}` is removed.
                 * `resolve_path_{arg}`: Whether to resolve an argument that is meant to be an attribute of
                     this object and is the first part of the path of `calc_func`. Passes only optional arguments.
-                    Defaults to True. See `vectorbt.utils.attr.AttrResolver.resolve_attr`.
+                    Defaults to True. See `vectorbt.utils.attr_.AttrResolver.resolve_attr`.
                 * `resolve_{arg}`: Whether to resolve an argument that is meant to be an attribute of
                     this object and is present in the function's signature. Defaults to False.
-                    See `vectorbt.utils.attr.AttrResolver.resolve_attr`.
+                    See `vectorbt.utils.attr_.AttrResolver.resolve_attr`.
                 * `template_mapping`: Mapping to replace templates in metric settings. Used across all settings.
                 * Any other keyword argument that overrides the settings or is passed directly to `calc_func`.
 
                 If `resolve_calc_func` is True, the calculation function may "request" any of the
                 following arguments by accepting them or if `pass_{arg}` was found in the settings dict:
 
-                * Each of `vectorbt.utils.attr.AttrResolver.self_aliases`: original object
+                * Each of `vectorbt.utils.attr_.AttrResolver.self_aliases`: original object
                     (ungrouped, with no column selected)
                 * `group_by`: won't be passed if it was used in resolving the first attribute of `calc_func`
                     specified as a path, use `pass_group_by=True` to pass anyway
@@ -169,7 +170,7 @@ class StatsBuilderMixin(metaclass=MetaStatsBuilderMixin):
                 * `to_timedelta`: replaced by True if None and frequency is set
                 * Any argument from `settings`
                 * Any attribute of this object if it meant to be resolved
-                    (see `vectorbt.utils.attr.AttrResolver.resolve_attr`)
+                    (see `vectorbt.utils.attr_.AttrResolver.resolve_attr`)
 
                 Pass `metrics='all'` to calculate all supported metrics.
             tags (str or iterable): Tags to select.
@@ -240,9 +241,8 @@ class StatsBuilderMixin(metaclass=MetaStatsBuilderMixin):
             Make sure to resolve and then to re-use as many object attributes as possible to
             utilize built-in caching (even if global caching is disabled).
 
-        ## Example
-
-        See `vectorbt.portfolio.base` for examples.
+        Usage:
+            See `vectorbt.portfolio.base` for examples.
         """
         # Resolve defaults
         if silence_warnings is None:
