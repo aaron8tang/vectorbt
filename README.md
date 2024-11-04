@@ -1,147 +1,42 @@
 <div align="center">
-	<a href="https://vectorbt.dev/" alt="https://vectorbt.dev/">
-        <img src="docs/docs/assets/logo/header.svg" />
+    <a href="https://vectorbt.pro/" alt="https://vectorbt.pro/">
+        <img src="https://raw.githubusercontent.com/polakowo/vectorbt/master/docs/docs/assets/logo/header-pro.svg" />
+    </a>
+</div>
+<div align="center">
+    <a href="https://vectorbt.dev/" alt="https://vectorbt.dev/">
+        <img src="https://raw.githubusercontent.com/polakowo/vectorbt/master/docs/docs/assets/logo/header.svg" />
     </a>
 </div>
 <br>
 <p align="center">
-    <a href="https://pypi.org/project/vectorbt" alt="Python Versions">
-        <img src="https://img.shields.io/pypi/pyversions/vectorbt.svg?logo=python&logoColor=white" /></a>
-    <a href="https://github.com/polakowo/vectorbt/blob/master/LICENSE.md" alt="License">
-        <img src="https://img.shields.io/badge/license-Fair%20Code-yellow" /></a>
-    <a href="https://pypi.org/project/vectorbt" alt="PyPi">
-        <img src="https://img.shields.io/pypi/v/vectorbt?color=blueviolet" /></a>
-    <a href="https://codecov.io/gh/polakowo/vectorbt" alt="codecov">
-        <img src="https://codecov.io/gh/polakowo/vectorbt/branch/master/graph/badge.svg?token=YTLNAI7PS3" /></a>
-    <a href="https://vectorbt.dev/" alt="Website">
-        <img src="https://img.shields.io/website?url=https://vectorbt.dev/" /></a>
     <a href="https://pepy.tech/project/vectorbt" alt="Downloads">
-        <img src="https://pepy.tech/badge/vectorbt" /></a>
+        <img src="https://pepy.tech/badge/vectorbt" />
+    </a>
+    <a href="https://pypi.org/project/vectorbt" alt="PyPi">
+        <img src="https://img.shields.io/pypi/v/vectorbt?color=blueviolet" />
+    </a>
+    <a href="https://github.com/polakowo/vectorbt/blob/master/LICENSE.md" alt="License">
+	<img src="https://img.shields.io/badge/license-Fair%20Code-yellow" />
+    </a>
+    <a href="https://codecov.io/gh/polakowo/vectorbt" alt="codecov">
+        <img src="https://codecov.io/gh/polakowo/vectorbt/branch/master/graph/badge.svg?token=YTLNAI7PS3" />
+    </a>
+    <a href="https://vectorbt.dev/" alt="Website">
+        <img src="https://img.shields.io/website?url=https://vectorbt.dev/" />
+    </a>
     <a href="https://mybinder.org/v2/gh/polakowo/vectorbt/HEAD?urlpath=lab" alt="Binder">
-        <img src="https://img.shields.io/badge/launch-binder-d6604a" /></a>
+        <img src="https://img.shields.io/badge/launch-binder-d6604a" />
+    </a>
     <a href="https://gitter.im/vectorbt/community?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge" alt="Join the chat at https://gitter.im/vectorbt/community">
-        <img src="https://badges.gitter.im/vectorbt.svg" /></a>
-    <a href="https://www.patreon.com/vectorbt" alt="Patreon">
-        <img src="https://img.shields.io/badge/support-sponsor-ff69b4?logo=patreon" /></a>
+        <img src="https://badges.gitter.im/vectorbt.svg" />
+    </a>
 </p>
-
-## [Installation](#installation) · [Features](#zap-features) · [Usage](#sparkles-usage) · [Resources](#resources) · [License](#license)
-
-vectorbt takes a novel approach to backtesting: it operates entirely on pandas and NumPy objects, and is accelerated by 
-[Numba](https://github.com/numba/numba) to analyze any data at speed and scale. This allows for testing of many thousands 
-of strategies in **seconds**.
-
-In contrast to other backtesters, vectorbt represents complex data as (structured) NumPy arrays.
-This enables superfast computation using vectorized operations with NumPy and non-vectorized but dynamically 
-compiled operations with Numba. It also integrates [Plotly](https://github.com/plotly/plotly.py) and 
-[Jupyter Widgets](https://github.com/jupyter-widgets/ipywidgets) to display complex charts and dashboards akin 
-to Tableau right in the Jupyter notebook. Due to high performance, vectorbt can process large amounts of 
-data even without GPU and parallelization and enables the user to interact with data-hungry widgets 
-without significant delays.
-
-With vectorbt, you can
-* Backtest strategies in a couple of lines of Python code
-* Enjoy the best of both worlds: the ecosystem of Python and the speed of C
-* Retain full control over execution (as opposed to web-based services such as TradingView)
-* Optimize your trading strategy against many parameters, assets, and periods in one go
-* Uncover hidden patterns in financial markets
-* Analyze time series and engineer new features for ML models
-* Supercharge pandas and your favorite tools to run much faster
-* Visualize strategy performance using interactive charts and dashboards (both in Jupyter and browser)
-* Fetch and process data periodically, send Telegram notifications, and more :fire:
-
-## Installation
-
-```bash
-pip install -U vectorbt
-```
-
-To also install optional dependencies:
-
-```bash
-pip install -U "vectorbt[full]"
-```
-
-See [License](https://github.com/polakowo/vectorbt#license) notes on optional dependencies.
-
-Troubleshooting:
-
-* [TA-Lib support](https://github.com/mrjbq7/ta-lib#dependencies)
-* [Jupyter Notebook and JupyterLab support](https://plotly.com/python/getting-started/#jupyter-notebook-support)
-
-### Docker
-
-You can pull the most recent Docker image if you [have Docker installed](https://docs.docker.com/install/).
-
-```bash
-docker run --rm -p 8888:8888 -v "$PWD":/home/jovyan/work polakowo/vectorbt
-```
-
-This command pulls the latest `polakowo/vectorbt` image from Docker Hub. It then starts a container running 
-a Jupyter Notebook server and exposes the server on host port 8888. Visiting `http://127.0.0.1:8888/?token=<token>` 
-in a browser loads JupyterLab, where token is the secret token printed in the console. Docker destroys 
-the container after notebook server exit, but any files written to the working directory in the container 
-remain intact in the working directory on the host. See [Jupyter Docker Stacks - Quick Start](https://github.com/jupyter/docker-stacks#quick-start).
-
-There are two types of images: 
-
-* **[polakowo/vectorbt](https://hub.docker.com/r/polakowo/vectorbt)**: vanilla version (default)
-* **[polakowo/vectorbt-full](https://hub.docker.com/r/polakowo/vectorbt-full)**: full version (with optional dependencies)
-
-Each Docker image is based on [jupyter/scipy-notebook](https://hub.docker.com/r/jupyter/scipy-notebook) 
-and comes with Jupyter environment, vectorbt, and other scientific packages installed.
-
-## :zap: Features
-
-### Pandas
-
-- [x] **Pandas acceleration**: Compiled versions of most popular pandas functions, such as mapping, reducing, rolling, grouping, and resamping. For best performance, most operations are done strictly using NumPy and Numba. Attaches a custom accessor on top of pandas to easily switch between pandas and vectorbt functionality. **[>>](https://vectorbt.dev/docs/generic/accessors.html)**
-- [x] **Flexible broadcasting**: Mechanism for broadcasting array-like objects of arbitrary shapes, including pandas objects with MultiIndex.
-- [x] **Pandas utilities**: Grouping columns, wrapping NumPy arrays, transforming pandas objects and their indexes, and more. **[>>](https://vectorbt.dev/docs/base/index.html)**
-
-### Data
-
-- [x] **Data acquisition**: Supports various data providers, such as **[Yahoo Finance](https://github.com/ranaroussi/yfinance)**, **[Binance](https://github.com/sammchardy/python-binance)**, **[CCXT](https://github.com/ccxt/ccxt)** and **[Alpaca](https://github.com/alpacahq/alpaca-trade-api-python)**. Can merge multiple symbols with different index, as well as update them. **[>>](https://vectorbt.dev/docs/data/custom.html)**
-- [x] **Data generation**: Supports various (random) data generators, such as **[GBM](https://en.wikipedia.org/wiki/Geometric_Brownian_motion)**. **[>>](https://vectorbt.dev/docs/data/custom.html)**
-- [x] **Scheduled data updates**: Can periodically update any previously downloaded data. **[>>](https://vectorbt.dev/docs/data/updater.html)**
-- [x] **Data preparation**: Transformation, rescaling, and normalization of data. Custom splitters for cross-validation. Supports **[Scikit-Learn](https://github.com/scikit-learn/scikit-learn)** splitters, such as for K-Folds cross-validation. **[>>](https://vectorbt.dev/docs/generic/accessors.html)**
-- [x] **Labeling for ML**: Discrete and continuous label generation for effective training of ML models. **[>>](https://vectorbt.dev/docs/labels/generators.html)**
-
-### Indicators
-
-- [x] **Technical indicators**: Most popular technical indicators with full Numba support, including Moving Average, Bollinger Bands, RSI, Stochastic, MACD, and more. Out-of-the-box support for 99% indicators in **[Technical Analysis Library](https://github.com/bukosabino/ta)**, **[Pandas TA](https://github.com/twopirllc/pandas-ta)**, and **[TA-Lib](https://github.com/mrjbq7/ta-lib)** thanks to built-in parsers. Each indicator is wrapped with the vectorbt's indicator engine and thus accepts arbitrary hyperparameter combinations - from arrays to Cartesian products. **[>>](https://vectorbt.dev/docs/indicators/basic.html)**
-- [x] **Indicator factory**: Sophisticated factory for building custom technical indicators of any complexity. Takes a function and does all the magic for you: generates an indicator skeleton that takes inputs and parameters of any shape and type, and runs the vectorbt's indicator engine. The easiest and most flexible way to create indicators you will find in open source. **[>>](https://vectorbt.dev/docs/indicators/factory.html)**
-
-### Signals
-
-- [x] **Signal analysis**: Generation, mapping and reducing, ranking, and distribution analysis of entry and exit signals. **[>>](https://vectorbt.dev/docs/signals/accessors.html)**
-- [x] **Signal generators**: Random and stop loss (SL, TSL, TP, etc.) signal generators with full Numba support. **[>>](https://vectorbt.dev/docs/signals/generators.html)**
-- [x] **Signal factory**: Signal factory based on indicator factory specialized for iterative signal generation. **[>>](https://vectorbt.dev/docs/signals/factory.html)**
-
-### Modeling
-
-- [x] **Portfolio modeling**: The fastest backtesting engine in open source: fills 1,000,000 orders in 70-100ms on Apple M1. Flexible and powerful simulation functions for portfolio modeling, highly optimized for highest performance and lowest memory footprint. Supports two major simulation modes: 1) vectorized backtesting using user-provided arrays, such as orders, signals, and records, and 2) event-driven backtesting using user-defined callbacks. Supports shorting and individual as well as multi-asset mixed portfolios. Combines many features across vectorbt into a single behemoth class. **[>>](https://vectorbt.dev/docs/portfolio/base.html)**
-
-### Analysis
-
-- [x] **Performance metrics**: Numba-compiled versions of metrics from **[empyrical](https://github.com/quantopian/empyrical)** and their highly-optimized rolling versions. Adapter for **[QuantStats](https://github.com/ranaroussi/quantstats)**. **[>>](https://vectorbt.dev/docs/returns/accessors.html)**
-- [x] **Stats builder**: Class for building statistics out of custom metrics. Implements a preset of tailored statistics for many backtesting components, such as signals, returns, and portfolio. **[>>](https://vectorbt.dev/docs/generic/stats_builder.html)**
-- [x] **Records and mapped arrays**: In-house data structures for analyzing complex data, such as simulation logs. Fully compiled with Numba. **[>>](https://vectorbt.dev/docs/records/index.html)**
-- [x] **Trade analysis**: Retrospective analysis of trades from various view points. Supports entry trades, exit trades, and positions. **[>>](https://vectorbt.dev/docs/portfolio/trades.html)**
-- [x] **Drawdown analysis**: Drawdown statistics of any numeric time series. **[>>](https://vectorbt.dev/docs/generic/drawdowns.html)**
-
-### Plotting
-
-- [x] **Data visualization**: Numerous flexible data plotting functions distributed across vectorbt.
-- [x] **Figures and widgets**: Custom interactive figures and widgets using **[Plotly](https://github.com/plotly/plotly.py)**, such as Heatmap and Volume. All custom widgets have dedicated methods for efficiently updating their state. **[>>](https://vectorbt.dev/docs/generic/plotting.html)**
-- [x] **Plots builder**: Class for building plots out of custom subplots. Implements a preset of tailored subplots for many backtesting components, such as signals, returns, and portfolio. **[>>](https://vectorbt.dev/docs/generic/plots_builder.html)**
-
-### Extra
-
-- [x] **Notifications**: Telegram bot based on **[Python Telegram Bot](https://github.com/python-telegram-bot/python-telegram-bot)**. **[>>](https://vectorbt.dev/docs/messaging/telegram.html)**
-- [x] **General utilities**: Scheduling using **[schedule](https://github.com/dbader/schedule)**, templates, decorators, configs, and more. **[>>](https://vectorbt.dev/docs/utils/index.html)**
-- [x] **Caching**: Property and method decorators for caching most frequently used objects.
-- [x] **Persistance**: Most Python objects including data and portfolio can be saved to a file and retrieved back using **[Dill](https://github.com/uqfoundation/dill)**.
+<p align="center">
+    <a href="https://pypi.org/project/vectorbt" alt="Python Versions">
+        <img src="https://img.shields.io/pypi/pyversions/vectorbt.svg?logo=python&logoColor=white" />
+    </a>
+</p>
 
 ## :sparkles: Usage
 
@@ -301,42 +196,21 @@ vbt.save_animation('bbands.gif', bbands.wrapper.index, plot, bbands, delta=90, s
 
 And this is just the tip of the iceberg of what's possible. Check out the [website](https://vectorbt.dev/) to learn more.
 
-## Resources
+## Installation
 
-### Documentation
+```sh
+pip install -U vectorbt
+```
 
-Head over to the [documentation](https://vectorbt.dev/) to get started.
+To also install optional dependencies:
 
-### Notebooks
+```sh
+pip install -U "vectorbt[full]"
+```
 
-- [Performance analysis of Moving Average Crossover](https://nbviewer.jupyter.org/github/polakowo/vectorbt/blob/master/examples/BitcoinDMAC.ipynb)
-- [Performance analysis of stop signals](https://nbviewer.jupyter.org/github/polakowo/vectorbt/blob/master/examples/StopSignals.ipynb)
-- [Backtesting per trading session](https://nbviewer.jupyter.org/github/polakowo/vectorbt/blob/master/examples/TradingSessions.ipynb)
-- [Portfolio optimization](https://nbviewer.jupyter.org/github/polakowo/vectorbt/blob/master/examples/PortfolioOptimization.ipynb)
-- [Plotting MACD parameters as 3D volume](https://nbviewer.jupyter.org/github/polakowo/vectorbt/blob/master/examples/MACDVolume.ipynb)
-- [Walk-forward optimization](https://nbviewer.jupyter.org/github/polakowo/vectorbt/blob/master/examples/WalkForwardOptimization.ipynb)
-- [Running Telegram signal bot](https://nbviewer.jupyter.org/github/polakowo/vectorbt/blob/master/examples/TelegramSignals.ipynb)
-- [Porting RSI strategy from backtrader](https://nbviewer.jupyter.org/github/polakowo/vectorbt/blob/master/examples/PortingBTStrategy.ipynb)
-- [Pairs trading (vs backtrader)](https://nbviewer.jupyter.org/github/polakowo/vectorbt/blob/master/examples/PairsTrading.ipynb)
+## Colab Notebook
 
-Note: you must run the notebook to play with the widgets.
-
-### Dashboards
-
-- [Detecting and backtesting common candlestick patterns](https://github.com/polakowo/vectorbt/tree/master/apps/candlestick-patterns)
-
-### Articles
-
-- [Stop Loss, Trailing Stop, or Take Profit? 2 Million Backtests Shed Light](https://polakowo.medium.com/stop-loss-trailing-stop-or-take-profit-2-million-backtests-shed-light-dde23bda40be)
-
-### Getting Help
-
-- If you need supervision or any help with your implementation, [join a private chat](https://www.patreon.com/vectorbt)
-- For questions on Numba and other parts, the best place to go to is [StackOverflow](https://stackoverflow.com/)
-- If you have general questions, start a new [GitHub Discussion](https://github.com/polakowo/vectorbt/discussions)
-  - Alternatively, you can ask on [Gitter](https://gitter.im/vectorbt/community)
-- If you found what appears to be a bug, please [create a new issue](https://github.com/polakowo/vectorbt/issues)
-- For other inquiries, please [contact the author](mailto:olegpolakow@gmail.com)
+[Google Colaboratory](https://colab.research.google.com/drive/1ibqyrf6LPFlzRb6mkPpl3hxqL6ryNBXI?usp=sharing)
 
 ## License
 
@@ -347,6 +221,10 @@ However, it is not allowed to sell products and services that are mostly just th
 If you have any questions about this or want to apply for a license exception, please [contact the author](mailto:olegpolakow@gmail.com).
 
 Installing optional dependencies may be subject to a more restrictive license.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/svg?repos=polakowo/vectorbt&type=Timeline)](https://star-history.com/#polakowo/vectorbt&Timeline)
 
 ## Disclaimer
 

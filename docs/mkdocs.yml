@@ -44,6 +44,7 @@ markdown_extensions:
   - meta
   - admonition
   - def_list
+  - md_in_html
   - attr_list
   - tables
   - footnotes
@@ -52,14 +53,16 @@ markdown_extensions:
   - pymdownx.inlinehilite
   - pymdownx.snippets
   - pymdownx.superfences
+  - pymdownx.tabbed:
+      alternate_style: true
   - pymdownx.progressbar
   - pymdownx.magiclink:
       repo_url_shorthand: true
       user: polakowo
       repo: vectorbt
   - pymdownx.emoji:
-      emoji_index: !!python/name:materialx.emoji.twemoji
-      emoji_generator: !!python/name:materialx.emoji.to_svg
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
   - pymdownx.highlight:
       extend_pygments_lang:
         - name: pycon3
@@ -85,6 +88,10 @@ plugins:
   - search
   - minify:
       minify_html: true
+
+# Validation
+validation:
+  absolute_links: ignore
 
 # Page tree
 nav:

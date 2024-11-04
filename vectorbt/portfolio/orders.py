@@ -405,7 +405,10 @@ class Orders(Records):
 
         # Plot price
         if self_col.close is not None:
-            fig = self_col.close.vbt.plot(trace_kwargs=close_trace_kwargs, add_trace_kwargs=add_trace_kwargs, fig=fig)
+            #fig = self_col.close.vbt.plot(trace_kwargs=close_trace_kwargs, add_trace_kwargs=add_trace_kwargs, fig=fig)
+            # 从第一个非nan值开始plot
+            nonnan = self_col.close[self_col.close.first_valid_index():]
+            fig = nonnan.vbt.plot(trace_kwargs=close_trace_kwargs, add_trace_kwargs=add_trace_kwargs, fig=fig)
 
         if self_col.count() > 0:
             # Extract information

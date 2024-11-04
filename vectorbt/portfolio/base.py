@@ -629,7 +629,7 @@ Let's simulate a portfolio with two columns:
 
 >>> pf = vbt.Portfolio.from_random_signals(close, n=[10, 20], seed=42)
 >>> pf.wrapper.columns
-Int64Index([10, 20], dtype='int64', name='rand_n')
+Index([10, 20], dtype='int64', name='rand_n')
 ```
 
 ### Column, group, and tag selection
@@ -2972,6 +2972,7 @@ class Portfolio(Wrapping, StatsBuilderMixin, PlotsBuilderMixin, metaclass=MetaPo
             slippage=broadcasted_args['slippage'],
             min_size=broadcasted_args['min_size'],
             max_size=broadcasted_args['max_size'],
+            size_granularity=broadcasted_args['size_granularity'],
             reject_prob=broadcasted_args['reject_prob'],
             lock_cash=broadcasted_args['lock_cash'],
             allow_partial=broadcasted_args['allow_partial'],
@@ -3286,7 +3287,7 @@ class Portfolio(Wrapping, StatsBuilderMixin, PlotsBuilderMixin, metaclass=MetaPo
 
                 !!! note
                     Disabling it does not disable Numba for other functions.
-                    If neccessary, you should ensure that every other function does not uses Numba as well.
+                    If necessary, you should ensure that every other function does not uses Numba as well.
                     You can do this by using the `py_func` attribute of that function.
                     Or, you could disable Numba globally by doing `os.environ['NUMBA_DISABLE_JIT'] = '1'`.
             max_orders (int): Size of the order records array.
@@ -4801,7 +4802,6 @@ class Portfolio(Wrapping, StatsBuilderMixin, PlotsBuilderMixin, metaclass=MetaPo
 
     def plot_trade_pnl(self, column: tp.Optional[tp.Label] = None, **kwargs) -> tp.BaseFigure:  # pragma: no cover
         """Plot one column/group of trade PnL."""
-        kwargs = merge_dicts(dict(close_trace_kwargs=dict(name='Close')), kwargs)
         return self.trades.regroup(False).plot_pnl(column=column, **kwargs)
 
     def plot_positions(self, column: tp.Optional[tp.Label] = None, **kwargs) -> tp.BaseFigure:  # pragma: no cover
@@ -4811,7 +4811,6 @@ class Portfolio(Wrapping, StatsBuilderMixin, PlotsBuilderMixin, metaclass=MetaPo
 
     def plot_position_pnl(self, column: tp.Optional[tp.Label] = None, **kwargs) -> tp.BaseFigure:  # pragma: no cover
         """Plot one column/group of position PnL."""
-        kwargs = merge_dicts(dict(close_trace_kwargs=dict(name='Close')), kwargs)
         return self.positions.regroup(False).plot_pnl(column=column, **kwargs)
 
     def plot_asset_flow(self,

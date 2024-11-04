@@ -92,7 +92,7 @@ Updating can be implemented by overriding the `Data.update_symbol` instance meth
 the same arguments as `Data.download_symbol`. In contrast to the download method, the update
 method is an instance method and can access the data downloaded earlier. It can also access the
 keyword arguments initially passed to the download method, accessible under `Data.download_kwargs`.
-Those arguments can be used as default arguments and overriden by arguments passed directly
+Those arguments can be used as default arguments and overridden by arguments passed directly
 to the update method, using `vectorbt.utils.config.merge_dicts`.
 
 Let's define an update method that updates the latest data point and adds two news data points.
@@ -442,7 +442,7 @@ class Data(Wrapping, StatsBuilderMixin, PlotsBuilderMixin, metaclass=MetaData):
         new_data = {}
         for k, v in data.items():
             if isinstance(v, pd.Series):
-                v = v.to_frame(name=v.name)
+                v = v.to_frame()
             v = v.reindex(columns=columns)
             if not multiple_columns:
                 v = v[columns[0]]
@@ -689,10 +689,13 @@ class Data(Wrapping, StatsBuilderMixin, PlotsBuilderMixin, metaclass=MetaData):
                 else:
                     col_data = self.data[s][c]
                 if len(self.symbols) > 1:
-                    new_data[c].loc[:, s] = col_data
+                    #new_data[c].loc[:, s] = col_data
+                    new_data[c][s] = col_data
                 else:
-                    new_data[c].loc[:] = col_data
-
+                    #new_data[c].loc[:] = col_data
+                    new_data[c] = col_data
+        for c in columns:
+            new_data[c] = new_data[c].infer_objects()
         return new_data
 
     def get(self, column: tp.Optional[tp.Label] = None, **kwargs) -> tp.MaybeTuple[tp.SeriesFrame]:
